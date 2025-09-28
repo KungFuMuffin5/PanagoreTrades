@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import os
 
 # Load the type ID DataFrame
 df_TypeID = pd.read_excel(r"E:\EVE_TRADE\EVE_TRADE\invTypes.xlsx")
@@ -135,8 +136,26 @@ summary_df = pd.DataFrame([summary_stats])
 
 # Create Excel report with multiple sheets
 from datetime import datetime
+import glob
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"TradeHub_Report_{timestamp}.xlsx"
+
+# Clean up old reports - keep only the latest one
+def cleanup_old_reports():
+    """Remove old TradeHub_Report files, keep only the latest"""
+    report_files = glob.glob("TradeHub_Report_*.xlsx")
+    if len(report_files) > 1:
+        # Sort files by timestamp in filename (newest first)
+        report_files.sort(reverse=True)
+        # Remove all but the newest
+        for old_file in report_files[1:]:
+            try:
+                os.remove(old_file)
+                print(f"Removed old report: {old_file}")
+            except Exception as e:
+                print(f"Could not remove {old_file}: {e}")
+
+cleanup_old_reports()
 
 with pd.ExcelWriter(filename, engine='openpyxl') as writer:
     # Main trading opportunities sheet
