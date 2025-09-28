@@ -16,8 +16,8 @@ if "TYPEID" not in df_TypeID.columns or "TYPENAME" not in df_TypeID.columns:
     raise KeyError("df_TypeID must contain columns 'TYPEID' and 'TYPENAME' (after normalization).")
 
 # Fetch data from the APIs and create individual DataFrames
-trade_hubs = ['Jita', 'Amarr']
-region_ids = [10000002, 10000043]
+trade_hubs = ['Jita', 'Amarr', 'Rens', 'Dodixie']
+region_ids = [10000002, 10000043, 10000030, 10000032]
 dfs = []
 
 for hub, region_id in zip(trade_hubs, region_ids):
@@ -81,7 +81,7 @@ def calculate_deltas(group):
 if "typeid" not in combined_df.columns:
     raise KeyError(f"combined_df has no column 'typeid'; columns: {combined_df.columns.tolist()}")
 
-result = combined_df.groupby('typeid').apply(calculate_deltas).reset_index()
+result = combined_df.groupby('typeid').apply(calculate_deltas, include_groups=False).reset_index()
 
 # Merge TYPENAME and TYPEID back in
 RegionTrade = result.merge(
@@ -116,9 +116,59 @@ RegionTrade = RegionTrade[RegionTrade["delta_percentage"] > DeltaPercentage_min]
 RegionTrade = RegionTrade[RegionTrade["delta_percentage"] < DeltaPercentage_max]
 RegionTrade = RegionTrade[RegionTrade["min_price"] > MinPrice_Item]
 
-# Output to Excel
-RegionTrade.to_excel('Daily_Tradehub_Report.xlsx', index=False, engine='openpyxl')
+# Sort by delta percentage (highest profit margins first)
+RegionTrade = RegionTrade.sort_values('delta_percentage', ascending=False)
 
+# Create summary statistics
+summary_stats = {
+    'Total_Opportunities': len(RegionTrade),
+    'Avg_Delta_Percentage': RegionTrade['delta_percentage'].mean(),
+    'Max_Delta_Percentage': RegionTrade['delta_percentage'].max(),
+    'Min_Delta_Percentage': RegionTrade['delta_percentage'].min(),
+    'Avg_Min_Price': RegionTrade['min_price'].mean(),
+    'Avg_Max_Price': RegionTrade['max_price'].mean(),
+    'Total_Potential_Profit': RegionTrade['delta'].sum()
+}
 
+# Format the summary as a DataFrame for easy viewing
+summary_df = pd.DataFrame([summary_stats])
 
+# Create Excel report with multiple sheets
+from datetime import datetime
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+filename = f"TradeHub_Report_{timestamp}.xlsx"
 
+with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+    # Main trading opportunities sheet
+    RegionTrade.to_excel(writer, sheet_name='Trading_Opportunities', index=False)
+
+    # Summary statistics sheet
+    summary_df.to_excel(writer, sheet_name='Summary_Statistics', index=False)
+
+    # Filter criteria sheet
+    filter_criteria = pd.DataFrame([{
+        'Min_Volume_Yesterday': Vol_DAY_min,
+        'Max_Volume_Yesterday': Vol_DAY_max,
+        'Min_Delta_Percentage': DeltaPercentage_min,
+        'Max_Delta_Percentage': DeltaPercentage_max,
+        'Min_Price_Item': MinPrice_Item,
+        'Report_Generated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }])
+    filter_criteria.to_excel(writer, sheet_name='Filter_Criteria', index=False)
+
+print(f"\n=== TRADEHUB ANALYSIS REPORT ===")
+print(f"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"Total trading opportunities found: {len(RegionTrade)}")
+print(f"Average profit margin: {RegionTrade['delta_percentage'].mean():.2f}%")
+print(f"Best opportunity: {RegionTrade['delta_percentage'].max():.2f}% margin")
+print(f"Report saved as: {filename}")
+print(f"\nTop 10 Trading Opportunities:")
+print("=" * 80)
+
+# Display top 10 opportunities
+top_10 = RegionTrade.head(10)[['TYPENAME', 'delta_percentage', 'delta', 'min_tradehub', 'max_tradehub', 'min_price', 'max_price']]
+for idx, row in top_10.iterrows():
+    print(f"{row['TYPENAME'][:30]:30} | {row['delta_percentage']:6.1f}% | "
+          f"{row['delta']:10,.0f} ISK | {row['min_tradehub']:8} -> {row['max_tradehub']:8}")
+
+print(f"\nFull report available in: {filename}")
