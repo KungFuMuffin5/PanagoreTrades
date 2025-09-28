@@ -269,7 +269,7 @@ class ESIClient:
         return response.json()
 
     def get_corporation_wallets(self):
-        """Get corporation wallet balances"""
+        """Get corporation wallet balances - try master wallet first"""
         self._ensure_valid_token()
 
         headers = {
@@ -277,15 +277,33 @@ class ESIClient:
             'User-Agent': 'PanagoreTrades/1.0'
         }
 
-        url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/"
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
+        # Try master wallet (division 1000) first - usually accessible to all corp members
+        try:
+            url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/1000/"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                # If master wallet fails, try division 1 (main corp wallet)
+                try:
+                    url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/1/"
+                    response = requests.get(url, headers=headers)
+                    response.raise_for_status()
+                    return response.json()
+                except requests.exceptions.HTTPError:
+                    # If both fail, try the general wallets endpoint
+                    url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/"
+                    response = requests.get(url, headers=headers)
+                    response.raise_for_status()
 
-        wallets = response.json()
+                    wallets = response.json()
 
-        # Return main corporation wallet (division 1)
-        main_wallet = next((w for w in wallets if w['division'] == 1), None)
-        return main_wallet['balance'] if main_wallet else 0
+                    # Return main corporation wallet (division 1)
+                    main_wallet = next((w for w in wallets if w['division'] == 1), None)
+                    return main_wallet['balance'] if main_wallet else 0
+            else:
+                raise
 
     def get_wallet_transactions(self, days=7):
         """Get recent wallet transactions for profit calculation"""

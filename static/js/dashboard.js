@@ -33,6 +33,67 @@ function initializeDashboard() {
 }
 
 /**
+ * Refresh all data on the page
+ */
+function refreshAllData() {
+    console.log('Refreshing all data...');
+
+    // Add spinning animation to refresh button
+    const refreshBtn = document.querySelector('button[onclick="refreshAllData()"] i');
+    if (refreshBtn) {
+        refreshBtn.classList.add('refresh-spin');
+    }
+
+    // Refresh all data sources
+    Promise.all([
+        loadWalletInfo(),
+        loadProfitHistory(),
+        updateTrades()
+    ]).then(() => {
+        console.log('All data refreshed successfully');
+
+        // Remove spinning animation
+        if (refreshBtn) {
+            refreshBtn.classList.remove('refresh-spin');
+        }
+
+        // Show success feedback
+        showNotification('Data refreshed successfully!', 'success');
+    }).catch(error => {
+        console.error('Error refreshing data:', error);
+
+        // Remove spinning animation
+        if (refreshBtn) {
+            refreshBtn.classList.remove('refresh-spin');
+        }
+
+        // Show error feedback
+        showNotification('Error refreshing data', 'error');
+    });
+}
+
+/**
+ * Show notification message
+ */
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 px-4 py-2 rounded-md shadow-lg z-50 transition-all duration-300 ${
+        type === 'success' ? 'bg-green-500 text-white' :
+        type === 'error' ? 'bg-red-500 text-white' :
+        'bg-blue-500 text-white'
+    }`;
+    notification.textContent = message;
+
+    document.body.appendChild(notification);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+
+/**
  * Setup dark mode functionality
  */
 function setupDarkMode() {
@@ -43,24 +104,32 @@ function setupDarkMode() {
     const currentTheme = localStorage.getItem('theme') || 'light';
     if (currentTheme === 'dark') {
         body.classList.add('dark');
-        toggle.checked = true;
     }
 
-    // Toggle dark mode
-    toggle.addEventListener('change', function() {
-        if (this.checked) {
-            body.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            body.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
-        }
+    // Toggle dark mode - button click event
+    if (toggle) {
+        toggle.addEventListener('click', function() {
+            console.log('Dark mode toggle clicked');
+            const isDark = body.classList.contains('dark');
 
-        // Update chart colors for dark mode
-        if (profitChart) {
-            updateChartTheme();
-        }
-    });
+            if (isDark) {
+                body.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                console.log('Switched to light mode');
+            } else {
+                body.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                console.log('Switched to dark mode');
+            }
+
+            // Update chart colors for dark mode
+            if (profitChart) {
+                updateChartTheme();
+            }
+        });
+    } else {
+        console.error('Dark mode toggle element not found!');
+    }
 }
 
 /**
@@ -186,7 +255,8 @@ async function loadWalletInfo() {
             data.corporation_name ? `${data.corporation_name} ISK` : 'Corporation ISK';
 
         // Update wallet amounts with ISK formatting
-        document.getElementById('corp-wallet').textContent = formatISK(data.corp_wallet);
+        document.getElementById('corp-wallet').textContent =
+            data.corp_wallet === "NO VALUE" ? "NO VALUE" : formatISK(data.corp_wallet);
         document.getElementById('char-wallet').textContent = formatISK(data.char_wallet);
 
     } catch (error) {
@@ -315,8 +385,9 @@ function displayTradingOpportunities(opportunities) {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50 cursor-pointer trade-hub-card';
 
-        const marginClass = trade.delta_percentage >= 50 ? 'text-green-600' :
-                           trade.delta_percentage >= 30 ? 'text-yellow-600' : 'text-gray-600';
+        // Dynamic margin colors that work with dark mode
+        const marginClass = trade.delta_percentage >= 50 ? 'margin-high' :
+                           trade.delta_percentage >= 30 ? 'margin-medium' : 'margin-low';
 
         row.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap">
@@ -478,14 +549,19 @@ function updateChartTheme() {
 }
 
 /**
- * Format ISK amounts with proper separators
+ * Format ISK amounts with backtick separators (e.g., "1`819`982`129 ISK")
  */
 function formatISK(amount) {
     if (amount === 0) return '0 ISK';
-    if (amount < 1000) return amount.toFixed(2) + ' ISK';
-    if (amount < 1000000) return (amount / 1000).toFixed(1) + 'K ISK';
-    if (amount < 1000000000) return (amount / 1000000).toFixed(1) + 'M ISK';
-    return (amount / 1000000000).toFixed(1) + 'B ISK';
+
+    // Convert to integer to avoid decimal places
+    const intAmount = Math.floor(amount);
+
+    // Convert to string and add backtick separators every 3 digits from right
+    const amountStr = intAmount.toString();
+    const formatted = amountStr.replace(/\B(?=(\d{3})+(?!\d))/g, '`');
+
+    return formatted + ' ISK';
 }
 
 /**
