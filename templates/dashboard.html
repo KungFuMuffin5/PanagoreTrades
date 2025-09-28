@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PanagoreTrades - EVE Online Trading Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .trade-hub-card {
+            transition: all 0.3s ease;
+        }
+        .trade-hub-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        .profit-positive {
+            color: #10B981;
+        }
+        .profit-negative {
+            color: #EF4444;
+        }
+        .loading-spinner {
+            border-top-color: #3498db;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .isk-format {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+
+        /* Dark mode styles */
+        .dark {
+            background-color: #1a1a1a;
+            color: #e5e5e5;
+        }
+        .dark .bg-white {
+            background-color: #2d2d2d !important;
+            color: #e5e5e5;
+        }
+        .dark .bg-gray-100 {
+            background-color: #1a1a1a !important;
+        }
+        .dark .bg-gray-50 {
+            background-color: #2d2d2d !important;
+        }
+        .dark .text-gray-900 {
+            color: #e5e5e5 !important;
+        }
+        .dark .text-gray-700 {
+            color: #b8b8b8 !important;
+        }
+        .dark .text-gray-500 {
+            color: #8b8b8b !important;
+        }
+        .dark .border-gray-200 {
+            border-color: #404040 !important;
+        }
+        .dark .border-gray-300 {
+            border-color: #404040 !important;
+        }
+        .dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+            border-color: #404040 !important;
+        }
+        .dark .hover\:bg-gray-50:hover {
+            background-color: #3d3d3d !important;
+        }
+
+        /* Dark mode toggle switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #68D391;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #68D391;
+        }
+
+        /* Chart container with fixed height */
+        .chart-container {
+            height: 300px;
+            max-height: 300px;
+        }
+
+        /* Sortable headers */
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        .sortable:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        .sort-icon {
+            display: inline-block;
+            margin-left: 5px;
+            opacity: 0.5;
+        }
+        .sort-active {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-6">
+                <div class="flex items-center">
+                    <i class="fas fa-chart-line text-blue-600 text-3xl mr-3"></i>
+                    <h1 class="text-3xl font-bold text-gray-900">PanagoreTrades</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <!-- Dark Mode Toggle -->
+                    <div class="flex items-center">
+                        <span class="text-sm text-gray-500 mr-2">Dark Mode</span>
+                        <div class="relative">
+                            <input type="checkbox" id="dark-mode-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                            <label for="dark-mode-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-500">Character</p>
+                        <p class="font-semibold" id="character-name">Loading...</p>
+                    </div>
+                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                        <i class="fas fa-user text-white"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Wallet Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- Corporation Wallet -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100">
+                        <i class="fas fa-building text-blue-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Corporation ISK</p>
+                        <p class="text-2xl font-bold text-gray-900 isk-format" id="corp-wallet">Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Character Wallet -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100">
+                        <i class="fas fa-wallet text-green-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Personal ISK</p>
+                        <p class="text-2xl font-bold text-gray-900 isk-format" id="char-wallet">Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7-Day Profit -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100">
+                        <i class="fas fa-chart-line text-green-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">7-Day Profit</p>
+                        <p class="text-2xl font-bold profit-positive isk-format" id="week-profit">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Trading Filters</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <!-- Trade Hub Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Trade Hubs</label>
+                    <div class="space-y-2" id="hub-checkboxes">
+                        <!-- Dynamically populated -->
+                    </div>
+                </div>
+
+                <!-- Minimum Margin -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Min Margin %</label>
+                    <input type="number" id="min-margin" value="20" min="0" max="1000"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <!-- Maximum Margin -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Max Margin %</label>
+                    <input type="number" id="max-margin" value="1500" min="0" max="5000"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <!-- Update Button -->
+                <div class="flex items-end">
+                    <button onclick="updateTrades()"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">
+                        <i class="fas fa-sync-alt mr-2"></i>Update
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trading Opportunities -->
+        <div class="bg-white rounded-lg shadow-md">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-gray-900">Trading Opportunities</h2>
+                    <div class="flex items-center">
+                        <span class="text-sm text-gray-500 mr-2">Found:</span>
+                        <span class="bg-blue-100 text-blue-800 text-sm font-medium px-2.5 py-0.5 rounded" id="opportunity-count">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loading-trades" class="p-8 text-center">
+                <div class="loading-spinner border-4 border-gray-200 rounded-full w-12 h-12 mx-auto mb-4"></div>
+                <p class="text-gray-500">Loading trading opportunities...</p>
+            </div>
+
+            <!-- Trading Table -->
+            <div id="trades-container" class="hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="typename">
+                                    Item <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="delta_percentage">
+                                    Margin <i class="fas fa-sort sort-icon sort-active"></i>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="delta">
+                                    Profit <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="route">
+                                    Route <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="min_vol_yesterday">
+                                    Volume <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="min_price">
+                                    Prices <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-tbody" class="bg-white divide-y divide-gray-200">
+                            <!-- Dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profit Chart -->
+        <div class="bg-white rounded-lg shadow-md mt-8 p-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">7-Day Profit History</h2>
+            <div class="chart-container">
+                <canvas id="profitChart"></canvas>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
