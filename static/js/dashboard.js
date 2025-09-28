@@ -181,6 +181,10 @@ async function loadWalletInfo() {
         // Update character name
         document.getElementById('character-name').textContent = data.character_name || 'Unknown';
 
+        // Update corporation name in the Corp ISK field
+        document.getElementById('corp-name').textContent =
+            data.corporation_name ? `${data.corporation_name} ISK` : 'Corporation ISK';
+
         // Update wallet amounts with ISK formatting
         document.getElementById('corp-wallet').textContent = formatISK(data.corp_wallet);
         document.getElementById('char-wallet').textContent = formatISK(data.char_wallet);

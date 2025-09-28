@@ -29,7 +29,8 @@ class TradingAnalyzer:
             'Jita': 10000002,
             'Amarr': 10000043,
             'Rens': 10000030,
-            'Dodixie': 10000032
+            'Dodixie': 10000032,
+            'Hek': 10000042
         }
 
     def get_trade_opportunities(self, selected_hubs=None, min_margin=20, max_margin=1500):

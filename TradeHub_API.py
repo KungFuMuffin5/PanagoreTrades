@@ -16,8 +16,8 @@ if "TYPEID" not in df_TypeID.columns or "TYPENAME" not in df_TypeID.columns:
     raise KeyError("df_TypeID must contain columns 'TYPEID' and 'TYPENAME' (after normalization).")
 
 # Fetch data from the APIs and create individual DataFrames
-trade_hubs = ['Jita', 'Amarr', 'Rens', 'Dodixie']
-region_ids = [10000002, 10000043, 10000030, 10000032]
+trade_hubs = ['Jita', 'Amarr', 'Rens', 'Dodixie', 'Hek']
+region_ids = [10000002, 10000043, 10000030, 10000032, 10000042]
 dfs = []
 
 for hub, region_id in zip(trade_hubs, region_ids):
