@@ -7,12 +7,17 @@ let profitChart = null;
 let updateInterval = null;
 let currentSort = { column: 'delta_percentage', direction: 'desc' };
 let tradesData = [];
+let warehouseData = null;
+let selectedWarehouseHub = 'all';
+let currentTab = 'trading';
+let warehouseProfitMargin = 5; // Default 5% profit margin
 
 // Initialize dashboard when page loads
 document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();
-    setupDarkMode();
     setupTableSorting();
+    initializeAdvancedFilters();
+    initializeTabs();
     loadWalletInfo();
     loadTradeHubs();
     loadProfitHistory();
@@ -93,44 +98,6 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-/**
- * Setup dark mode functionality
- */
-function setupDarkMode() {
-    const toggle = document.getElementById('dark-mode-toggle');
-    const body = document.body;
-
-    // Check for saved theme preference or default to light mode
-    const currentTheme = localStorage.getItem('theme') || 'light';
-    if (currentTheme === 'dark') {
-        body.classList.add('dark');
-    }
-
-    // Toggle dark mode - button click event
-    if (toggle) {
-        toggle.addEventListener('click', function() {
-            console.log('Dark mode toggle clicked');
-            const isDark = body.classList.contains('dark');
-
-            if (isDark) {
-                body.classList.remove('dark');
-                localStorage.setItem('theme', 'light');
-                console.log('Switched to light mode');
-            } else {
-                body.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
-                console.log('Switched to dark mode');
-            }
-
-            // Update chart colors for dark mode
-            if (profitChart) {
-                updateChartTheme();
-            }
-        });
-    } else {
-        console.error('Dark mode toggle element not found!');
-    }
-}
 
 /**
  * Setup table sorting functionality
@@ -333,12 +300,25 @@ async function updateTrades() {
             .map(cb => cb.value);
         const minMargin = document.getElementById('min-margin').value;
         const maxMargin = document.getElementById('max-margin').value;
+        const minVolume = document.getElementById('min-volume').value;
+        const maxVolume = document.getElementById('max-volume').value;
+        const minPrice = document.getElementById('min-price').value;
+        const maxPrice = document.getElementById('max-price').value;
+        const minProfit = document.getElementById('min-profit').value;
+        const maxProfit = document.getElementById('max-profit').value;
 
         // Build query parameters
         const params = new URLSearchParams();
         selectedHubs.forEach(hub => params.append('hubs', hub));
         params.append('min_margin', minMargin);
         params.append('max_margin', maxMargin);
+
+        if (minVolume) params.append('min_volume', minVolume);
+        if (maxVolume) params.append('max_volume', maxVolume);
+        if (minPrice) params.append('min_price', minPrice);
+        if (maxPrice) params.append('max_price', maxPrice);
+        if (minProfit) params.append('min_profit', minProfit);
+        if (maxProfit) params.append('max_profit', maxProfit);
 
         const response = await fetch(`/api/trades?${params}`);
         const data = await response.json();
@@ -467,9 +447,10 @@ function createProfitChart(profitData) {
 
     const profits = profitData.map(day => day.profit / 1000000); // Convert to millions
 
-    const isDark = document.body.classList.contains('dark');
-    const textColor = isDark ? '#e5e5e5' : '#374151';
-    const gridColor = isDark ? '#404040' : '#e5e7eb';
+    // zkillboard-inspired dark theme chart colors
+    const textColor = '#ffffff';
+    const gridColor = '#333333';
+    const lineColor = '#007acc';
 
     profitChart = new Chart(ctx, {
         type: 'line',
@@ -478,15 +459,19 @@ function createProfitChart(profitData) {
             datasets: [{
                 label: 'Daily Profit (Million ISK)',
                 data: profits,
-                borderColor: 'rgb(59, 130, 246)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                borderColor: lineColor,
+                backgroundColor: 'rgba(0, 122, 204, 0.1)',
                 borderWidth: 3,
                 fill: true,
                 tension: 0.4,
-                pointBackgroundColor: 'rgb(59, 130, 246)',
-                pointBorderColor: '#fff',
+                pointBackgroundColor: lineColor,
+                pointBorderColor: '#000000',
                 pointBorderWidth: 2,
-                pointRadius: 6
+                pointRadius: 6,
+                pointHoverRadius: 8,
+                pointHoverBackgroundColor: lineColor,
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 3
             }]
         },
         options: {
@@ -530,23 +515,6 @@ function createProfitChart(profitData) {
     });
 }
 
-/**
- * Update chart theme for dark/light mode
- */
-function updateChartTheme() {
-    if (!profitChart) return;
-
-    const isDark = document.body.classList.contains('dark');
-    const textColor = isDark ? '#e5e5e5' : '#374151';
-    const gridColor = isDark ? '#404040' : '#e5e7eb';
-
-    profitChart.options.scales.x.ticks.color = textColor;
-    profitChart.options.scales.x.grid.color = gridColor;
-    profitChart.options.scales.y.ticks.color = textColor;
-    profitChart.options.scales.y.grid.color = gridColor;
-
-    profitChart.update();
-}
 
 /**
  * Format ISK amounts with backtick separators (e.g., "1`819`982`129 ISK")
@@ -562,6 +530,467 @@ function formatISK(amount) {
     const formatted = amountStr.replace(/\B(?=(\d{3})+(?!\d))/g, '`');
 
     return formatted + ' ISK';
+}
+
+/**
+ * Toggle advanced filters visibility
+ */
+function toggleAdvancedFilters() {
+    const content = document.getElementById('advanced-filters-content');
+    const icon = document.getElementById('advanced-filters-icon');
+
+    if (content.classList.contains('collapsed')) {
+        // Expand
+        content.classList.remove('collapsed');
+        icon.classList.add('rotated');
+
+        // Save state to localStorage
+        localStorage.setItem('advancedFiltersExpanded', 'true');
+
+        // Show notification
+        showNotification('Advanced filters expanded', 'info');
+    } else {
+        // Collapse
+        content.classList.add('collapsed');
+        icon.classList.remove('rotated');
+
+        // Save state to localStorage
+        localStorage.setItem('advancedFiltersExpanded', 'false');
+
+        // Show notification
+        showNotification('Advanced filters collapsed', 'info');
+    }
+}
+
+/**
+ * Initialize advanced filters state from localStorage
+ */
+function initializeAdvancedFilters() {
+    const content = document.getElementById('advanced-filters-content');
+    const icon = document.getElementById('advanced-filters-icon');
+    const isExpanded = localStorage.getItem('advancedFiltersExpanded') === 'true';
+
+    if (isExpanded) {
+        content.classList.remove('collapsed');
+        icon.classList.add('rotated');
+    } else {
+        content.classList.add('collapsed');
+        icon.classList.remove('rotated');
+    }
+}
+
+/**
+ * Clear all filters to default values
+ */
+function clearFilters() {
+    // Reset filter inputs to default values
+    document.getElementById('min-margin').value = 20;
+    document.getElementById('max-margin').value = 1500;
+    document.getElementById('min-volume').value = 75;
+    document.getElementById('max-volume').value = '';
+    document.getElementById('min-price').value = 100000;
+    document.getElementById('max-price').value = '';
+    document.getElementById('min-profit').value = '';
+    document.getElementById('max-profit').value = '';
+
+    // Check all trade hub checkboxes
+    const hubCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+    hubCheckboxes.forEach(checkbox => {
+        checkbox.checked = true;
+    });
+
+    // Show notification
+    showNotification('Filters cleared to defaults', 'info');
+
+    // Automatically update trades with cleared filters
+    updateTrades();
+}
+
+/**
+ * Switch between tabs
+ */
+function switchTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`${tabName}-tab`).classList.add('active');
+
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById(`${tabName}-content`).classList.add('active');
+
+    currentTab = tabName;
+
+    // Load data for the selected tab
+    if (tabName === 'warehouse') {
+        loadWarehouseData();
+    }
+
+    // Save tab preference
+    localStorage.setItem('activeTab', tabName);
+}
+
+/**
+ * Initialize tab based on saved preference
+ */
+function initializeTabs() {
+    const savedTab = localStorage.getItem('activeTab') || 'trading';
+    switchTab(savedTab);
+}
+
+/**
+ * Load warehouse data
+ */
+async function loadWarehouseData(enhanced = true) {
+    try {
+        showWarehouseLoading(true);
+
+        const response = await fetch(`/api/warehouse?enhanced=${enhanced}`);
+        const result = await response.json();
+
+        if (result.success) {
+            warehouseData = result.data;
+            updateWarehouseSummary(result.data.summary);
+            updateWarehouseHubCounts();
+            displayWarehouseItems();
+            loadTradingSkills();
+        } else {
+            console.error('Warehouse API error:', result.error);
+            displayWarehouseError(result.error);
+        }
+
+    } catch (error) {
+        console.error('Error loading warehouse data:', error);
+        displayWarehouseError('Failed to load warehouse data');
+    } finally {
+        showWarehouseLoading(false);
+    }
+}
+
+/**
+ * Show/hide warehouse loading state
+ */
+function showWarehouseLoading(show) {
+    const loadingElement = document.getElementById('loading-warehouse');
+    const containerElement = document.getElementById('warehouse-container');
+
+    if (show) {
+        loadingElement.classList.remove('hidden');
+        containerElement.classList.add('hidden');
+    } else {
+        loadingElement.classList.add('hidden');
+        containerElement.classList.remove('hidden');
+    }
+}
+
+/**
+ * Update warehouse summary cards
+ */
+function updateWarehouseSummary(summary) {
+    if (!summary) return;
+
+    // Update main metrics
+    document.getElementById('total-warehouse-value').textContent =
+        formatISK(summary.total_theoretical_value || summary.total_value_all_hubs || 0);
+
+    document.getElementById('total-actual-profit').textContent =
+        formatISK(summary.total_actual_value || 0);
+
+    document.getElementById('isk-in-orders').textContent =
+        formatISK(summary.total_isk_in_orders || 0);
+
+    document.getElementById('total-warehouse-items').textContent =
+        (summary.total_items_all_hubs || 0).toLocaleString();
+
+    // Update enhanced analysis metrics if available
+    if (summary.enhanced_analysis && summary.precision_metrics) {
+        const metrics = summary.precision_metrics;
+        document.getElementById('precision-metrics').style.display = 'block';
+
+        document.getElementById('cost-basis-coverage').textContent =
+            metrics.cost_basis_coverage_percentage + '%';
+
+        document.getElementById('items-with-history').textContent =
+            `${metrics.items_with_cost_basis}/${metrics.total_items}`;
+
+        document.getElementById('total-active-orders').textContent =
+            metrics.total_active_orders.toLocaleString();
+    } else {
+        document.getElementById('precision-metrics').style.display = 'none';
+    }
+}
+
+/**
+ * Update warehouse hub item counts
+ */
+function updateWarehouseHubCounts() {
+    if (!warehouseData || !warehouseData.warehouse_data) return;
+
+    const hubData = warehouseData.warehouse_data;
+    let totalItems = 0;
+
+    Object.keys(hubData).forEach(hubName => {
+        const hub = hubData[hubName];
+        const count = hub.total_items || 0;
+        totalItems += count;
+
+        const elementId = `${hubName.toLowerCase()}-items-count`;
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.textContent = `${count} items`;
+        }
+    });
+
+    // Update "all hubs" count
+    document.getElementById('all-items-count').textContent = `${totalItems} items`;
+}
+
+/**
+ * Load and display trading skills
+ */
+async function loadTradingSkills() {
+    try {
+        const response = await fetch('/api/warehouse/skills');
+        const result = await response.json();
+
+        if (result.success) {
+            const data = result.data;
+            document.getElementById('broker-fee-rate').textContent =
+                data.broker_fee_rate.toFixed(2);
+            document.getElementById('sales-tax-rate').textContent =
+                data.sales_tax_rate.toFixed(2);
+        }
+
+    } catch (error) {
+        console.error('Error loading trading skills:', error);
+    }
+}
+
+/**
+ * Select warehouse hub
+ */
+function selectWarehouseHub(hubName) {
+    selectedWarehouseHub = hubName;
+
+    // Update UI
+    document.querySelectorAll('.warehouse-hub-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+
+    const selectedCard = document.getElementById(`hub-${hubName}`);
+    if (selectedCard) {
+        selectedCard.classList.add('selected');
+    }
+
+    // Update header
+    const hubDisplayName = hubName === 'all' ? 'All Hubs' : hubName;
+    document.getElementById('selected-hub-name').textContent = hubDisplayName;
+
+    // Display items for selected hub
+    displayWarehouseItems();
+}
+
+/**
+ * Display warehouse items
+ */
+function displayWarehouseItems() {
+    const tbody = document.getElementById('warehouse-tbody');
+    tbody.innerHTML = '';
+
+    if (!warehouseData || !warehouseData.warehouse_data) {
+        displayWarehouseError('No warehouse data available');
+        return;
+    }
+
+    let allItems = [];
+
+    // Collect items from selected hub(s)
+    if (selectedWarehouseHub === 'all') {
+        Object.values(warehouseData.warehouse_data).forEach(hubData => {
+            if (hubData.items) {
+                hubData.items.forEach(item => {
+                    item.hub_name = hubData.hub_name;
+                    allItems.push(item);
+                });
+            }
+        });
+    } else {
+        const hubData = warehouseData.warehouse_data[selectedWarehouseHub];
+        if (hubData && hubData.items) {
+            allItems = hubData.items.map(item => ({
+                ...item,
+                hub_name: selectedWarehouseHub
+            }));
+        }
+    }
+
+    // Update item count
+    document.getElementById('warehouse-items-count').textContent = allItems.length;
+
+    if (allItems.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td colspan="7" class="px-6 py-4 text-center" style="color: var(--text-muted);">
+                No items found in ${selectedWarehouseHub === 'all' ? 'any hub' : selectedWarehouseHub}
+            </td>
+        `;
+        tbody.appendChild(row);
+        return;
+    }
+
+    // Sort items by actual profit (highest first)
+    allItems.sort((a, b) => (b.actual_profit || b.current_value || 0) - (a.actual_profit || a.current_value || 0));
+
+    // Display items
+    allItems.forEach(item => {
+        const row = document.createElement('tr');
+        row.className = 'warehouse-item-row';
+
+        // Enhanced data fields
+        const actualCost = item.actual_cost_per_unit || item.effective_buy_price || 0;
+        const avgBuyPrice = item.avg_buy_price || 0;
+        const minSellPrice = item.min_sell_price || 0;
+        const actualProfit = item.actual_profit || 0;
+        const hasCostBasis = item.has_cost_basis || false;
+        const activeOrders = item.active_orders || { buy_orders: [], sell_orders: [] };
+
+        // Calculate minimum sell price for current profit margin
+        const minProfitableSellPrice = calculateMinSellPrice(actualCost, warehouseProfitMargin);
+
+        // Create cost basis display
+        const costBasisHtml = hasCostBasis ?
+            `<div class="text-sm font-medium" style="color: var(--accent-green);">${formatISK(actualCost)}</div>
+             <div class="text-xs" style="color: var(--text-muted);">✓ Transaction history</div>` :
+            `<div class="text-sm font-medium" style="color: var(--text-muted);">${formatISK(actualCost)}</div>
+             <div class="text-xs" style="color: var(--text-muted);">Market estimate</div>`;
+
+        // Create orders display
+        const totalOrders = activeOrders.total_buy_orders + activeOrders.total_sell_orders;
+        const ordersHtml = totalOrders > 0 ?
+            `<div class="text-sm font-medium" style="color: var(--accent-blue);">${totalOrders} orders</div>
+             <div class="text-xs" style="color: var(--text-muted);">${activeOrders.total_buy_orders}B / ${activeOrders.total_sell_orders}S</div>` :
+            `<div class="text-sm" style="color: var(--text-muted);">No orders</div>`;
+
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm font-medium" style="color: var(--text-primary);">${item.item_name}</div>
+                <div class="text-sm" style="color: var(--text-muted);">
+                    ID: ${item.type_id}
+                    ${selectedWarehouseHub === 'all' ? ` • ${item.hub_name}` : ''}
+                </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm" style="color: var(--text-primary);">
+                ${item.quantity.toLocaleString()}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                ${costBasisHtml}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm font-medium isk-format" style="color: var(--text-primary);">${formatISK(avgBuyPrice)}</div>
+                <div class="text-xs" style="color: var(--text-muted);">Market average</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <div class="text-sm font-medium isk-format" style="color: var(--accent-green);">${formatISK(minProfitableSellPrice)}</div>
+                <div class="text-xs" style="color: var(--text-muted);">For ${warehouseProfitMargin}% margin</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <span class="text-lg font-bold isk-format ${actualProfit > 0 ? 'profit-positive' : 'profit-negative'}">${formatISK(actualProfit)}</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                ${ordersHtml}
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * Calculate minimum sell price for given profit margin
+ */
+function calculateMinSellPrice(costBasis, profitMarginPercent) {
+    // Apply broker fee and sales tax (typical EVE Online rates)
+    const brokerFeeRate = 2.5; // Broker Relations V
+    const salesTaxRate = 4.5;  // Accounting V
+    const totalFeeRate = (brokerFeeRate + salesTaxRate) / 100;
+
+    // Calculate minimum sell price: cost * (1 + margin) / (1 - fees)
+    const targetNet = costBasis * (1 + profitMarginPercent / 100);
+    return targetNet / (1 - totalFeeRate);
+}
+
+/**
+ * Update profit margin from slider
+ */
+function updateProfitMargin(value) {
+    warehouseProfitMargin = parseFloat(value);
+    document.getElementById('profit-margin-display').textContent = warehouseProfitMargin + '%';
+
+    // Refresh the warehouse display with new calculations
+    displayWarehouseItems();
+}
+
+/**
+ * Display warehouse error
+ */
+function displayWarehouseError(message) {
+    const tbody = document.getElementById('warehouse-tbody');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="7" class="px-6 py-4 text-center" style="color: var(--accent-red);">
+                <i class="fas fa-exclamation-triangle mr-2"></i>${message}
+            </td>
+        </tr>
+    `;
+    document.getElementById('warehouse-items-count').textContent = '0';
+}
+
+/**
+ * Refresh warehouse data
+ */
+async function refreshWarehouseData() {
+    console.log('Refreshing warehouse data...');
+
+    // Add spinning animation to refresh button
+    const refreshBtn = document.querySelector('button[onclick="refreshWarehouseData()"] i');
+    if (refreshBtn) {
+        refreshBtn.classList.add('refresh-spin');
+    }
+
+    try {
+        // Force refresh by adding cache-busting parameter
+        const response = await fetch(`/api/warehouse?refresh=${Date.now()}`);
+        const result = await response.json();
+
+        if (result.success) {
+            warehouseData = result.data;
+            updateWarehouseSummary();
+            updateWarehouseHubCounts();
+            displayWarehouseItems();
+            showNotification('Warehouse data refreshed successfully!', 'success');
+        } else {
+            throw new Error(result.error);
+        }
+
+    } catch (error) {
+        console.error('Error refreshing warehouse data:', error);
+        showNotification('Error refreshing warehouse data', 'error');
+    } finally {
+        // Remove spinning animation
+        if (refreshBtn) {
+            refreshBtn.classList.remove('refresh-spin');
+        }
+    }
+}
+
+/**
+ * Show skills modal (placeholder for future implementation)
+ */
+function showSkillsModal() {
+    alert('Skills configuration modal will be implemented in a future update.\n\nCurrent skills are set to level V for Broker Relations and Accounting.\n\nThis results in:\n• Broker Fee: 2.5%\n• Sales Tax: ~4.5%');
 }
 
 /**

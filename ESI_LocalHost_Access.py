@@ -35,6 +35,7 @@ SSO_BASE_URL = "https://login.eveonline.com"
 SCOPES = [
     'esi-markets.read_corporation_orders.v1',
     'esi-wallet.read_corporation_wallet.v1',
+    'esi-wallet.read_corporation_wallets.v1',  # Added plural version for wallets endpoint
     'esi-wallet.read_character_wallet.v1',
     'esi-markets.read_character_orders.v1',
     'esi-characters.read_corporation_roles.v1',
@@ -284,24 +285,27 @@ class ESIClient:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
+            if e.response.status_code in [403, 404]:  # Handle both forbidden and not found
                 # If master wallet fails, try division 1 (main corp wallet)
                 try:
                     url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/1/"
                     response = requests.get(url, headers=headers)
                     response.raise_for_status()
                     return response.json()
-                except requests.exceptions.HTTPError:
-                    # If both fail, try the general wallets endpoint
-                    url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/"
-                    response = requests.get(url, headers=headers)
-                    response.raise_for_status()
+                except requests.exceptions.HTTPError as e2:
+                    if e2.response.status_code in [403, 404]:  # Handle both errors
+                        # If both fail, try the general wallets endpoint
+                        url = f"{ESI_BASE_URL}/corporations/{self.corporation_id}/wallets/"
+                        response = requests.get(url, headers=headers)
+                        response.raise_for_status()
 
-                    wallets = response.json()
+                        wallets = response.json()
 
-                    # Return main corporation wallet (division 1)
-                    main_wallet = next((w for w in wallets if w['division'] == 1), None)
-                    return main_wallet['balance'] if main_wallet else 0
+                        # Return main corporation wallet (division 1)
+                        main_wallet = next((w for w in wallets if w['division'] == 1), None)
+                        return main_wallet['balance'] if main_wallet else 0
+                    else:
+                        raise
             else:
                 raise
 
