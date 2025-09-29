@@ -405,13 +405,13 @@ class WarehouseManager:
                 'courier_contracts': int(len(courier_contracts)),
                 'outstanding_contracts': int(len(outstanding)),
                 'in_progress_contracts': int(len(in_progress)),
-                'total_collateral': float(courier_contracts['collateral'].sum() if 'collateral' in courier_contracts.columns else 0),
-                'total_reward': float(courier_contracts['reward'].sum() if 'reward' in courier_contracts.columns else 0),
+                'total_collateral': float(unfinished['collateral'].sum() if not unfinished.empty and 'collateral' in unfinished.columns else 0),
+                'total_reward': float(unfinished['reward'].sum() if not unfinished.empty and 'reward' in unfinished.columns else 0),
                 'unfinished_contracts': unfinished_contracts_list
             }
 
             print(f"Found {metrics['courier_contracts']} courier contracts ({metrics['outstanding_contracts']} outstanding, {metrics['in_progress_contracts']} in progress)")
-            print(f"Total collateral: {metrics['total_collateral']:,.2f} ISK")
+            print(f"Active contract collateral: {metrics['total_collateral']:,.2f} ISK")
 
             return courier_contracts, metrics
 
@@ -424,6 +424,103 @@ class WarehouseManager:
                 'in_progress_contracts': 0,
                 'total_collateral': 0.0,
                 'total_reward': 0.0
+            }
+
+    def calculate_actual_realized_profit(self, days_back=30):
+        """
+        Calculate ACTUAL realized profit from completed sales transactions
+        Returns profit from sell transactions minus the cost basis of what was sold
+        """
+        try:
+            if not self.esi_client or not self.esi_client.is_authenticated():
+                return {
+                    'total_realized_profit': 0,
+                    'total_sales_revenue': 0,
+                    'total_cost_of_goods_sold': 0,
+                    'total_fees_paid': 0,
+                    'transactions_analyzed': 0,
+                    'period_days': days_back
+                }
+
+            # Get corporation transactions
+            transactions_df = get_corporation_transactions(self.esi_client, days_back)
+
+            if transactions_df.empty:
+                return {
+                    'total_realized_profit': 0,
+                    'total_sales_revenue': 0,
+                    'total_cost_of_goods_sold': 0,
+                    'total_fees_paid': 0,
+                    'transactions_analyzed': 0,
+                    'period_days': days_back
+                }
+
+            # Filter for sell transactions only (is_buy = False)
+            sell_transactions = transactions_df[transactions_df['is_buy'] == False]
+
+            if sell_transactions.empty:
+                return {
+                    'total_realized_profit': 0,
+                    'total_sales_revenue': 0,
+                    'total_cost_of_goods_sold': 0,
+                    'total_fees_paid': 0,
+                    'transactions_analyzed': 0,
+                    'period_days': days_back
+                }
+
+            total_sales_revenue = 0
+            total_cost_of_goods_sold = 0
+            total_fees_paid = 0
+            transactions_analyzed = 0
+
+            # Process each sell transaction
+            for _, transaction in sell_transactions.iterrows():
+                type_id = transaction['type_id']
+                location_id = transaction['location_id']
+                quantity = transaction['quantity']
+                unit_price = transaction['unit_price']
+
+                # Calculate gross revenue (before fees)
+                gross_revenue = quantity * unit_price
+                total_sales_revenue += gross_revenue
+
+                # Calculate transaction fees (broker fees + sales tax)
+                broker_fee = gross_revenue * (self.calculate_broker_fee_rate() / 100)
+                sales_tax = gross_revenue * (self.calculate_sales_tax_rate() / 100)
+                transaction_fees = broker_fee + sales_tax
+                total_fees_paid += transaction_fees
+
+                # Get cost basis for this item at this location
+                cost_data = self.get_item_cost_basis(type_id, location_id, transactions_df)
+                if cost_data:
+                    cost_per_unit = cost_data[0]  # average cost
+                    cost_of_goods_sold = quantity * cost_per_unit
+                    total_cost_of_goods_sold += cost_of_goods_sold
+
+                transactions_analyzed += 1
+
+            # Net realized profit = Revenue - Fees - Cost of Goods Sold
+            total_realized_profit = total_sales_revenue - total_fees_paid - total_cost_of_goods_sold
+
+            return {
+                'total_realized_profit': round(total_realized_profit, 2),
+                'total_sales_revenue': round(total_sales_revenue, 2),
+                'total_cost_of_goods_sold': round(total_cost_of_goods_sold, 2),
+                'total_fees_paid': round(total_fees_paid, 2),
+                'transactions_analyzed': transactions_analyzed,
+                'period_days': days_back
+            }
+
+        except Exception as e:
+            print(f"Error calculating realized profit: {e}")
+            return {
+                'total_realized_profit': 0,
+                'total_sales_revenue': 0,
+                'total_cost_of_goods_sold': 0,
+                'total_fees_paid': 0,
+                'transactions_analyzed': 0,
+                'period_days': days_back,
+                'error': str(e)
             }
 
     def calculate_cost_basis(self, type_id, location_id=None):
@@ -875,9 +972,11 @@ class WarehouseManager:
         total_theoretical_value = sum(
             data.get('total_theoretical_value', 0) for data in all_warehouse_data.values()
         )
-        total_actual_value = sum(
-            data.get('total_actual_value', 0) for data in all_warehouse_data.values()
-        )
+
+        # Get ACTUAL realized profit from real transactions (not theoretical profit)
+        realized_profit_data = self.calculate_actual_realized_profit(days_back=30)
+        total_actual_profit = realized_profit_data['total_realized_profit']
+
         total_isk_in_orders = sum(
             data.get('isk_in_orders', 0) for data in all_warehouse_data.values()
         )
@@ -893,14 +992,15 @@ class WarehouseManager:
             'courier_contracts': courier_metrics,
             'summary': {
                 'total_theoretical_value': round(total_theoretical_value, 2),
-                'total_actual_value': round(total_actual_value, 2),
+                'total_actual_profit': round(total_actual_profit, 2),
                 'total_isk_in_orders': round(total_isk_in_orders, 2),
                 'total_items_all_hubs': total_items_all_hubs,
                 'hubs_analyzed': len(all_warehouse_data),
                 'enhanced_analysis': use_enhanced_analysis,
                 'precision_metrics': precision_metrics,
                 'analysis_timestamp': datetime.now().isoformat()
-            }
+            },
+            'realized_profit_details': realized_profit_data
         }
 
     def calculate_precision_metrics(self, warehouse_data):

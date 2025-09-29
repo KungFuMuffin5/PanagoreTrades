@@ -29,6 +29,19 @@ warehouse_cache_timestamp = None
 CACHE_DURATION = 300  # 5 minutes
 WAREHOUSE_CACHE_DURATION = 600  # 10 minutes for warehouse data
 
+def _create_zero_profit_days():
+    """Create 7 days of zero profit data"""
+    days = []
+    base_date = datetime.now() - timedelta(days=6)
+    for i in range(7):
+        day = base_date + timedelta(days=i)
+        days.append({
+            'date': day.strftime('%Y-%m-%d'),
+            'profit': 0,
+            'trades': 0
+        })
+    return days
+
 class TradingAnalyzer:
     def __init__(self):
         self.trade_hubs = {
@@ -285,16 +298,37 @@ def get_profit_history():
         if esi_client is None:
             esi_client = ESIClient()
 
-        # Try to get real profit data from ESI
+        # Try to get real profit data from ESI using warehouse manager for accurate calculation
         if esi_client.is_authenticated():
             try:
-                days = esi_client.calculate_profit_history(7)
+                # Use warehouse manager's more accurate profit calculation for 7-day total
+                if warehouse_manager is None:
+                    warehouse_manager = WarehouseManager(esi_client)
+
+                # Get total profit for last 7 days and show on the last day (today)
+                total_profit_data = warehouse_manager.calculate_actual_realized_profit(days_back=7)
+                total_profit = total_profit_data['total_realized_profit']
+                total_trades = total_profit_data['transactions_analyzed']
+
+                # Create 7 days with zero profit, except put all profit on today
+                days = []
+                base_date = datetime.now() - timedelta(days=6)
+                for i in range(7):
+                    day = base_date + timedelta(days=i)
+                    is_today = i == 6  # Last day is today
+                    days.append({
+                        'date': day.strftime('%Y-%m-%d'),
+                        'profit': total_profit if is_today else 0,  # All profit on today
+                        'trades': total_trades if is_today else 0   # All trades on today
+                    })
+
             except Exception as e:
                 print(f"Error getting ESI profit history: {e}")
-                days = esi_client._get_mock_profit_data(7)
+                # Fallback to zero data
+                days = _create_zero_profit_days()
         else:
-            # Use mock data if not authenticated
-            days = esi_client._get_mock_profit_data(7) if esi_client else []
+            # Use zero data if not authenticated
+            days = _create_zero_profit_days()
 
         if not days:
             # Fallback mock data
@@ -523,6 +557,135 @@ def update_trading_skills():
         return jsonify({
             'success': False,
             'error': str(e)
+        })
+
+@app.route('/api/orders')
+def get_corporation_orders():
+    """Get current corporation market orders with prices"""
+    global esi_client, warehouse_manager
+
+    try:
+        if warehouse_manager is None:
+            if esi_client is None:
+                esi_client = ESIClient()
+            warehouse_manager = WarehouseManager(esi_client)
+
+        # Get corporation orders (character orders placed on behalf of corporation)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            orders_df = loop.run_until_complete(warehouse_manager.get_character_orders())
+            # Filter to only show orders placed on behalf of the corporation
+            if not orders_df.empty and 'is_corporation' in orders_df.columns:
+                orders_df = orders_df[orders_df['is_corporation'] == True]
+        finally:
+            loop.close()
+
+        if orders_df.empty:
+            return jsonify({
+                'success': True,
+                'orders': {},
+                'summary': {
+                    'total_orders': 0,
+                    'buy_orders': 0,
+                    'sell_orders': 0,
+                    'total_isk_in_orders': 0
+                },
+                'timestamp': datetime.now().isoformat()
+            })
+
+        # Process orders by type_id and location
+        orders_by_item = {}
+        total_buy_orders = 0
+        total_sell_orders = 0
+        total_isk_in_orders = 0
+
+        # Debug: Print column names to understand the data structure
+        print(f"Orders DataFrame columns: {list(orders_df.columns) if not orders_df.empty else 'DataFrame is empty'}")
+        if not orders_df.empty:
+            print(f"First order sample: {orders_df.iloc[0].to_dict()}")
+            print(f"Orders DataFrame shape: {orders_df.shape}")
+            print(f"Sample of first few rows:\n{orders_df.head()}")
+        else:
+            print("No orders found - DataFrame is empty")
+
+        for _, order in orders_df.iterrows():
+            type_id = int(order['type_id'])
+            location_id = int(order['location_id'])
+            key = f"{type_id}_{location_id}"
+
+            if key not in orders_by_item:
+                orders_by_item[key] = {
+                    'type_id': type_id,
+                    'location_id': location_id,
+                    'buy_orders': [],
+                    'sell_orders': []
+                }
+
+            order_data = {
+                'order_id': int(order['order_id']),
+                'price': float(order['price']),
+                'volume_total': int(order['volume_total']),
+                'volume_remain': int(order['volume_remain']),
+                'duration': int(order['duration']),
+                'issued': order['issued'],
+                'range': order.get('range', 'station')
+            }
+
+            # Handle different possible column names for buy/sell orders
+            # Based on ESI documentation, orders can be determined as buy orders by checking various fields
+            is_buy = False
+            if 'is_buy_order' in order:
+                is_buy = order['is_buy_order']
+            elif 'is_buy' in order:
+                is_buy = order['is_buy']
+            elif 'buy_order' in order:
+                is_buy = order['buy_order']
+            elif 'escrow' in order and order['escrow'] > 0:
+                # ESI API: escrow field is only present for buy orders
+                is_buy = True
+            elif 'range' in order:
+                # ESI API: Buy orders have a range field, sell orders typically don't or have 'station'
+                # If range is anything other than 'station', it's likely a buy order
+                is_buy = (order['range'] != 'station')
+            else:
+                print(f"Warning: Cannot determine buy/sell order type for order {order['order_id']}")
+                print(f"Available columns: {list(order.keys())}")
+                # Default to sell order if we can't determine
+                is_buy = False
+
+            if is_buy:
+                orders_by_item[key]['buy_orders'].append(order_data)
+                total_buy_orders += 1
+                total_isk_in_orders += order_data['price'] * order_data['volume_remain']
+            else:
+                orders_by_item[key]['sell_orders'].append(order_data)
+                total_sell_orders += 1
+
+        return jsonify({
+            'success': True,
+            'orders': orders_by_item,
+            'summary': {
+                'total_orders': len(orders_df),
+                'buy_orders': total_buy_orders,
+                'sell_orders': total_sell_orders,
+                'total_isk_in_orders': round(total_isk_in_orders, 2)
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        print(f"Error getting corporation orders: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'orders': {},
+            'summary': {
+                'total_orders': 0,
+                'buy_orders': 0,
+                'sell_orders': 0,
+                'total_isk_in_orders': 0
+            }
         })
 
 if __name__ == '__main__':
