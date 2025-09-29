@@ -180,6 +180,12 @@ def index():
     """Main dashboard page"""
     return render_template('dashboard.html')
 
+@app.route('/test')
+def test_page():
+    """Test page for courier contract functionality"""
+    with open('test_page.html', 'r') as f:
+        return f.read()
+
 @app.route('/api/wallet')
 def get_wallet_info():
     """Get corporation and character wallet information"""
@@ -373,6 +379,9 @@ def get_warehouse_data():
         try:
             # Check if enhanced analysis is requested
             enhanced = request.args.get('enhanced', 'true').lower() == 'true'
+            include_char = request.args.get('include_character', 'false').lower() == 'true'
+
+            # Update warehouse manager method to accept include_character parameter
             warehouse_data = loop.run_until_complete(warehouse_manager.analyze_all_warehouses(enhanced))
         finally:
             loop.close()

@@ -15,7 +15,7 @@ import requests
 import json
 import math
 from datetime import datetime, timedelta
-from ESI_LocalHost_Access import ESIClient, get_character_market_orders, get_character_wallet_transactions
+from ESI_LocalHost_Access import ESIClient, get_character_market_orders, get_character_wallet_transactions, get_corporation_transactions, get_corporation_contracts, get_character_contracts
 from collections import defaultdict
 
 class WarehouseManager:
@@ -166,6 +166,7 @@ class WarehouseManager:
 
                     if hub_name:
                         asset['trade_hub'] = hub_name
+                        asset['asset_source'] = 'character'
                         trade_hub_assets.append(asset)
 
             return trade_hub_assets
@@ -173,6 +174,69 @@ class WarehouseManager:
         except Exception as e:
             print(f"Error getting character assets: {e}")
             return []
+
+    async def get_corporation_assets(self):
+        """
+        Get corporation assets from ESI API
+        Returns list of assets with location and quantity data
+        """
+        if not self.esi_client or not self.esi_client.is_authenticated():
+            print("ESI client not authenticated")
+            return []
+
+        try:
+            # Get corporation assets
+            assets_url = f"https://esi.evetech.net/latest/corporations/{self.esi_client.corporation_id}/assets/"
+            headers = {"Authorization": f"Bearer {self.esi_client.access_token}"}
+
+            response = requests.get(assets_url, headers=headers)
+            response.raise_for_status()
+
+            assets = response.json()
+
+            # Filter assets in trade hub stations
+            trade_hub_assets = []
+            hub_station_ids = [hub['station_id'] for hub in self.trade_hubs.values()]
+
+            for asset in assets:
+                if asset.get('location_id') in hub_station_ids:
+                    # Find which trade hub this asset is in
+                    hub_name = None
+                    for name, data in self.trade_hubs.items():
+                        if data['station_id'] == asset['location_id']:
+                            hub_name = name
+                            break
+
+                    if hub_name:
+                        asset['trade_hub'] = hub_name
+                        asset['asset_source'] = 'corporation'
+                        trade_hub_assets.append(asset)
+
+            print(f"Found {len(trade_hub_assets)} corporation assets in trade hubs")
+            return trade_hub_assets
+
+        except Exception as e:
+            print(f"Error getting corporation assets: {e}")
+            return []
+
+    async def get_all_assets(self, include_character=False):
+        """
+        Get assets from corporation and optionally character
+        Returns combined list of assets
+        """
+        all_assets = []
+
+        # Always get corporation assets (primary source)
+        corp_assets = await self.get_corporation_assets()
+        all_assets.extend(corp_assets)
+
+        # Optionally include character assets
+        if include_character:
+            char_assets = await self.get_character_assets()
+            all_assets.extend(char_assets)
+
+        print(f"Total assets found: {len(all_assets)} ({'corp + char' if include_character else 'corp only'})")
+        return all_assets
 
     async def get_character_orders(self):
         """
@@ -205,11 +269,15 @@ class WarehouseManager:
             transactions_df = get_character_wallet_transactions(self.esi_client)
 
             if not transactions_df.empty:
-                # Filter to recent transactions
-                transactions_df['date'] = pd.to_datetime(transactions_df['date'])
-                cutoff_date = datetime.now() - timedelta(days=days_back)
-                transactions_df = transactions_df[transactions_df['date'] >= cutoff_date]
+                # Convert date column to datetime with timezone awareness
+                transactions_df['transaction_date'] = pd.to_datetime(transactions_df['date'], utc=True)
 
+                # Filter to recent transactions - make cutoff_date timezone aware
+                from datetime import timezone
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+                transactions_df = transactions_df[transactions_df['transaction_date'] >= cutoff_date]
+
+                print(f"Found {len(transactions_df)} character transactions in last {days_back} days")
                 self.transactions_cache = transactions_df
 
             return transactions_df
@@ -217,6 +285,146 @@ class WarehouseManager:
         except Exception as e:
             print(f"Error getting character transactions: {e}")
             return pd.DataFrame()
+
+    async def get_corporation_transactions(self, days_back=30, division=1):
+        """
+        Get corporation's wallet transactions for cost basis calculation
+        Returns DataFrame with transaction history
+        """
+        if not self.esi_client or not self.esi_client.is_authenticated():
+            print("ESI client not authenticated")
+            return pd.DataFrame()
+
+        try:
+            transactions_df = get_corporation_transactions(self.esi_client, division=division)
+
+            if not transactions_df.empty:
+                # Check if we already have a proper datetime column
+                if 'transaction_date' in transactions_df.columns:
+                    # Use the pre-processed transaction_date column
+                    date_col = 'transaction_date'
+                elif 'date' in transactions_df.columns:
+                    # Convert date column to datetime
+                    transactions_df['transaction_date'] = pd.to_datetime(transactions_df['date'], utc=True)
+                    date_col = 'transaction_date'
+                else:
+                    print("No date column found in transactions")
+                    return pd.DataFrame()
+
+                # Filter to recent transactions - make cutoff_date timezone aware
+                from datetime import timezone
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+                transactions_df = transactions_df[transactions_df[date_col] >= cutoff_date]
+
+                print(f"Found {len(transactions_df)} corporation transactions in last {days_back} days")
+                self.transactions_cache = transactions_df
+
+            return transactions_df
+
+        except Exception as e:
+            print(f"Error getting corporation transactions: {e}")
+            return pd.DataFrame()
+
+    async def get_all_transactions(self, days_back=30, asset_source='corporation'):
+        """
+        Get transactions based on asset source (corporation or character)
+        """
+        if asset_source == 'corporation':
+            return await self.get_corporation_transactions(days_back)
+        else:
+            return await self.get_character_transactions(days_back)
+
+    async def get_courier_contracts(self, source='corporation'):
+        """
+        Get courier contracts from corporation or character
+        Returns contract data including collateral and status information
+        """
+        if not self.esi_client or not self.esi_client.is_authenticated():
+            print("ESI client not authenticated")
+            return pd.DataFrame(), {}
+
+        try:
+            if source == 'corporation':
+                contracts_df = get_corporation_contracts(self.esi_client)
+            else:
+                contracts_df = get_character_contracts(self.esi_client)
+
+            if contracts_df.empty:
+                return contracts_df, {
+                    'total_contracts': 0,
+                    'courier_contracts': 0,
+                    'outstanding_contracts': 0,
+                    'in_progress_contracts': 0,
+                    'total_collateral': 0.0,
+                    'total_reward': 0.0
+                }
+
+            # Filter for courier contracts
+            courier_contracts = contracts_df[contracts_df['type'] == 'courier'] if 'type' in contracts_df.columns else pd.DataFrame()
+
+            if courier_contracts.empty:
+                return courier_contracts, {
+                    'total_contracts': len(contracts_df),
+                    'courier_contracts': 0,
+                    'outstanding_contracts': 0,
+                    'in_progress_contracts': 0,
+                    'total_collateral': 0.0,
+                    'total_reward': 0.0
+                }
+
+            # Calculate metrics
+            outstanding = courier_contracts[courier_contracts['status'] == 'outstanding'] if 'status' in courier_contracts.columns else pd.DataFrame()
+            in_progress = courier_contracts[courier_contracts['status'] == 'in_progress'] if 'status' in courier_contracts.columns else pd.DataFrame()
+
+            # Get unfinished contracts details
+            unfinished = pd.concat([outstanding, in_progress]) if not outstanding.empty or not in_progress.empty else pd.DataFrame()
+            unfinished_contracts_list = []
+
+            if not unfinished.empty:
+                for _, contract in unfinished.iterrows():
+                    contract_info = {
+                        'contract_id': int(contract.get('contract_id', 0)),
+                        'status': str(contract.get('status', 'unknown')),
+                        'type': str(contract.get('type', 'unknown')),
+                        'collateral': float(contract.get('collateral', 0)),
+                        'reward': float(contract.get('reward', 0)),
+                        'title': str(contract.get('title', 'Untitled')),
+                        'issuer_id': int(contract.get('issuer_id', 0)),
+                        'assignee_id': int(contract.get('assignee_id', 0)) if contract.get('assignee_id') else None,
+                        'acceptor_id': int(contract.get('acceptor_id', 0)) if contract.get('acceptor_id') else None,
+                        'date_issued': str(contract.get('date_issued', '')),
+                        'date_expired': str(contract.get('date_expired', '')),
+                        'date_accepted': str(contract.get('date_accepted', '')) if contract.get('date_accepted') else None,
+                        'volume': float(contract.get('volume', 0)),
+                        'days_to_complete': int(contract.get('days_to_complete', 0))
+                    }
+                    unfinished_contracts_list.append(contract_info)
+
+            metrics = {
+                'total_contracts': int(len(contracts_df)),
+                'courier_contracts': int(len(courier_contracts)),
+                'outstanding_contracts': int(len(outstanding)),
+                'in_progress_contracts': int(len(in_progress)),
+                'total_collateral': float(courier_contracts['collateral'].sum() if 'collateral' in courier_contracts.columns else 0),
+                'total_reward': float(courier_contracts['reward'].sum() if 'reward' in courier_contracts.columns else 0),
+                'unfinished_contracts': unfinished_contracts_list
+            }
+
+            print(f"Found {metrics['courier_contracts']} courier contracts ({metrics['outstanding_contracts']} outstanding, {metrics['in_progress_contracts']} in progress)")
+            print(f"Total collateral: {metrics['total_collateral']:,.2f} ISK")
+
+            return courier_contracts, metrics
+
+        except Exception as e:
+            print(f"Error getting courier contracts: {e}")
+            return pd.DataFrame(), {
+                'total_contracts': 0,
+                'courier_contracts': 0,
+                'outstanding_contracts': 0,
+                'in_progress_contracts': 0,
+                'total_collateral': 0.0,
+                'total_reward': 0.0
+            }
 
     def calculate_cost_basis(self, type_id, location_id=None):
         """
@@ -247,13 +455,16 @@ class WarehouseManager:
         if total_quantity == 0:
             return None
 
+        # Use the correct date column (transaction_date if available, otherwise date)
+        date_column = 'transaction_date' if 'transaction_date' in item_transactions.columns else 'date'
+
         return {
-            'average_cost': total_cost / total_quantity,
-            'total_purchased': total_quantity,
-            'total_cost': total_cost,
-            'first_purchase': item_transactions['date'].min(),
-            'last_purchase': item_transactions['date'].max(),
-            'purchase_count': len(item_transactions)
+            'average_cost': float(total_cost / total_quantity),
+            'total_purchased': int(total_quantity),
+            'total_cost': float(total_cost),
+            'first_purchase': item_transactions[date_column].min().isoformat(),
+            'last_purchase': item_transactions[date_column].max().isoformat(),
+            'purchase_count': int(len(item_transactions))
         }
 
     def get_market_depth_analysis(self, region_id, type_id):
@@ -476,13 +687,14 @@ class WarehouseManager:
 
         hub_data = self.trade_hubs[hub_name]
 
-        # Get all data sources
-        all_assets = await self.get_character_assets()
+        # Get all data sources (primarily corporation assets)
+        all_assets = await self.get_all_assets(include_character=False)  # Corporation assets only
         hub_assets = [a for a in all_assets if a.get('trade_hub') == hub_name]
 
         if use_enhanced_analysis:
             # Get transaction history and active orders for enhanced analysis
-            await self.get_character_transactions()
+            # Use corporation transactions since we're analyzing corporation assets
+            await self.get_all_transactions(days_back=30, asset_source='corporation')
             orders_df = await self.get_character_orders()
         else:
             orders_df = pd.DataFrame()
@@ -526,7 +738,7 @@ class WarehouseManager:
 
             # Get market prices and depth analysis
             price_data = market_prices.get(type_id, {})
-            avg_buy_price = price_data.get('avg_buy_price', 0)
+            market_avg_buy_price = price_data.get('avg_buy_price', 0)  # Market average (not used for avg_buy_price)
             min_sell_price = price_data.get('min_sell_price', 0)
 
             # Enhanced market analysis
@@ -540,7 +752,10 @@ class WarehouseManager:
 
             # Calculate cost basis from transaction history
             cost_basis = self.calculate_cost_basis(type_id, location_id) if use_enhanced_analysis else None
-            actual_cost_per_unit = cost_basis['average_cost'] if cost_basis else avg_buy_price
+            actual_cost_per_unit = cost_basis['average_cost'] if cost_basis else market_avg_buy_price
+
+            # Use actual corp wallet purchase price as avg_buy_price, fallback to market price if no transactions
+            avg_buy_price = cost_basis['average_cost'] if cost_basis else market_avg_buy_price
 
             # Calculate effective prices with skills and fees
             effective_buy_price = self.calculate_effective_buy_price(avg_buy_price)
@@ -562,37 +777,37 @@ class WarehouseManager:
             item_orders = self.get_item_orders(type_id, location_id, orders_df)
 
             item_analysis = {
-                'type_id': type_id,
-                'item_name': item_name,
-                'quantity': quantity,
-                'location_id': location_id,
+                'type_id': int(type_id),
+                'item_name': str(item_name),
+                'quantity': int(quantity),
+                'location_id': int(location_id),
 
                 # Market prices
-                'avg_buy_price': round(avg_buy_price, 2),
-                'min_sell_price': round(min_sell_price, 2),
-                'realistic_sell_price': round(realistic_sell_price, 2),
-                'spread_percentage': round(spread_percentage, 2),
+                'avg_buy_price': round(float(avg_buy_price), 2),
+                'min_sell_price': round(float(min_sell_price), 2),
+                'realistic_sell_price': round(float(realistic_sell_price), 2),
+                'spread_percentage': round(float(spread_percentage), 2),
 
                 # Cost basis
-                'actual_cost_per_unit': round(actual_cost_per_unit, 2),
+                'actual_cost_per_unit': round(float(actual_cost_per_unit), 2),
                 'has_cost_basis': cost_basis is not None,
                 'cost_basis_data': cost_basis,
 
                 # Effective prices (after fees)
-                'effective_buy_price': round(effective_buy_price, 2),
-                'effective_sell_price': round(effective_sell_price, 2),
-                'actual_effective_cost': round(actual_effective_cost, 2),
-                'min_profitable_sell_price': round(min_profitable_sell, 2),
+                'effective_buy_price': round(float(effective_buy_price), 2),
+                'effective_sell_price': round(float(effective_sell_price), 2),
+                'actual_effective_cost': round(float(actual_effective_cost), 2),
+                'min_profitable_sell_price': round(float(min_profitable_sell), 2),
 
                 # Values and profits
-                'current_value': round(current_value, 2),
-                'actual_profit': round(actual_value, 2),
-                'theoretical_profit_per_unit': round(max(0, effective_sell_price - effective_buy_price), 2),
-                'actual_profit_per_unit': round(max(0, effective_sell_price - actual_effective_cost), 2),
+                'current_value': round(float(current_value), 2),
+                'actual_profit': round(float(actual_value), 2),
+                'theoretical_profit_per_unit': round(float(max(0, effective_sell_price - effective_buy_price)), 2),
+                'actual_profit_per_unit': round(float(max(0, effective_sell_price - actual_effective_cost)), 2),
 
                 # Market info
-                'buy_orders_available': price_data.get('buy_orders_count', 0),
-                'sell_orders_available': price_data.get('sell_orders_count', 0),
+                'buy_orders_available': int(price_data.get('buy_orders_count', 0)),
+                'sell_orders_available': int(price_data.get('sell_orders_count', 0)),
 
                 # Active orders
                 'active_orders': item_orders
@@ -623,6 +838,21 @@ class WarehouseManager:
         Returns comprehensive warehouse data including cost basis and active orders
         """
         all_warehouse_data = {}
+
+        # Get courier contract data with fail-safe defaults
+        try:
+            courier_contracts, courier_metrics = await self.get_courier_contracts('corporation')
+        except Exception as e:
+            print(f"Warning: Could not load courier contracts: {e}")
+            courier_metrics = {
+                'total_contracts': 0,
+                'courier_contracts': 0,
+                'outstanding_contracts': 0,
+                'in_progress_contracts': 0,
+                'total_collateral': 0.0,
+                'total_reward': 0.0,
+                'error': str(e)
+            }
 
         for hub_name in self.trade_hubs.keys():
             try:
@@ -660,6 +890,7 @@ class WarehouseManager:
 
         return {
             'warehouse_data': all_warehouse_data,
+            'courier_contracts': courier_metrics,
             'summary': {
                 'total_theoretical_value': round(total_theoretical_value, 2),
                 'total_actual_value': round(total_actual_value, 2),

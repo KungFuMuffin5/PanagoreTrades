@@ -11,9 +11,18 @@ let warehouseData = null;
 let selectedWarehouseHub = 'all';
 let currentTab = 'trading';
 let warehouseProfitMargin = 5; // Default 5% profit margin
+let includeCharacterAssets = false; // Default to corporation assets only
 
 // Initialize dashboard when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    // Set initial N/A values for courier contract fields
+    try {
+        document.getElementById('courier-collateral').textContent = 'N/A';
+        document.getElementById('open-courier-contracts').textContent = 'N/A';
+    } catch (e) {
+        console.warn('Could not set initial courier contract values:', e);
+    }
+
     initializeDashboard();
     setupTableSorting();
     initializeAdvancedFilters();
@@ -648,12 +657,12 @@ async function loadWarehouseData(enhanced = true) {
     try {
         showWarehouseLoading(true);
 
-        const response = await fetch(`/api/warehouse?enhanced=${enhanced}`);
+        const response = await fetch(`/api/warehouse?enhanced=${enhanced}&include_character=${includeCharacterAssets}`);
         const result = await response.json();
 
         if (result.success) {
             warehouseData = result.data;
-            updateWarehouseSummary(result.data.summary);
+            updateWarehouseSummary(result.data);  // Pass full data object instead of just summary
             updateWarehouseHubCounts();
             displayWarehouseItems();
             loadTradingSkills();
@@ -664,7 +673,16 @@ async function loadWarehouseData(enhanced = true) {
 
     } catch (error) {
         console.error('Error loading warehouse data:', error);
-        displayWarehouseError('Failed to load warehouse data');
+
+        // Set N/A values on error
+        try {
+            document.getElementById('courier-collateral').textContent = 'N/A';
+            document.getElementById('open-courier-contracts').textContent = 'N/A';
+        } catch (e) {
+            console.warn('Could not set N/A fallbacks:', e);
+        }
+
+        displayWarehouseError('Failed to load warehouse data - showing N/A values');
     } finally {
         showWarehouseLoading(false);
     }
@@ -689,21 +707,55 @@ function showWarehouseLoading(show) {
 /**
  * Update warehouse summary cards
  */
-function updateWarehouseSummary(summary) {
-    if (!summary) return;
+function updateWarehouseSummary(data) {
+    if (!data) return;
+
+    const summary = data.summary || {};
 
     // Update main metrics
     document.getElementById('total-warehouse-value').textContent =
         formatISK(summary.total_theoretical_value || summary.total_value_all_hubs || 0);
-
     document.getElementById('total-actual-profit').textContent =
         formatISK(summary.total_actual_value || 0);
-
     document.getElementById('isk-in-orders').textContent =
         formatISK(summary.total_isk_in_orders || 0);
 
-    document.getElementById('total-warehouse-items').textContent =
-        (summary.total_items_all_hubs || 0).toLocaleString();
+    // Update courier contract data with error handling and N/A fallbacks
+    try {
+        const courierData = data.courier_contracts || {};
+
+        // Handle courier collateral with N/A fallback
+        const collateral = courierData.total_collateral;
+        if (collateral !== undefined && collateral !== null && !isNaN(collateral)) {
+            document.getElementById('courier-collateral').textContent = formatISK(collateral);
+            console.log('Updated courier collateral:', formatISK(collateral));
+        } else {
+            document.getElementById('courier-collateral').textContent = 'N/A';
+            console.log('Set courier collateral to N/A');
+        }
+
+        // Handle open contracts count with N/A fallback
+        const outstanding = courierData.outstanding_contracts || 0;
+        const inProgress = courierData.in_progress_contracts || 0;
+
+        if (outstanding !== undefined && inProgress !== undefined) {
+            const openContracts = outstanding + inProgress;
+            document.getElementById('open-courier-contracts').textContent = openContracts.toLocaleString();
+            console.log('Updated open contracts:', openContracts);
+        } else {
+            document.getElementById('open-courier-contracts').textContent = 'N/A';
+            console.log('Set open contracts to N/A');
+        }
+
+        // Update unfinished contracts list
+        updateUnfinishedContracts(courierData.unfinished_contracts || []);
+    } catch (error) {
+        console.warn('Error updating courier contract data:', error);
+        // Set N/A fallbacks on error
+        document.getElementById('courier-collateral').textContent = 'N/A';
+        document.getElementById('open-courier-contracts').textContent = 'N/A';
+        updateUnfinishedContracts([]);
+    }
 
     // Update enhanced analysis metrics if available
     if (summary.enhanced_analysis && summary.precision_metrics) {
@@ -849,30 +901,46 @@ function displayWarehouseItems() {
         const row = document.createElement('tr');
         row.className = 'warehouse-item-row';
 
-        // Enhanced data fields
-        const actualCost = item.actual_cost_per_unit || item.effective_buy_price || 0;
-        const avgBuyPrice = item.avg_buy_price || 0;
-        const minSellPrice = item.min_sell_price || 0;
-        const actualProfit = item.actual_profit || 0;
+        // Extract data fields according to new specification
+        const avgBuyPrice = item.avg_buy_price || 0;  // From transaction history
+        const livePrice = item.realistic_sell_price || item.min_sell_price || 0;  // Current market price
+        const possibleProfit = livePrice - avgBuyPrice;  // Potential profit per unit
         const hasCostBasis = item.has_cost_basis || false;
         const activeOrders = item.active_orders || { buy_orders: [], sell_orders: [] };
 
-        // Calculate minimum sell price for current profit margin
-        const minProfitableSellPrice = calculateMinSellPrice(actualCost, warehouseProfitMargin);
-
-        // Create cost basis display
-        const costBasisHtml = hasCostBasis ?
-            `<div class="text-sm font-medium" style="color: var(--accent-green);">${formatISK(actualCost)}</div>
-             <div class="text-xs" style="color: var(--text-muted);">✓ Transaction history</div>` :
-            `<div class="text-sm font-medium" style="color: var(--text-muted);">${formatISK(actualCost)}</div>
+        // Create Avg. Buy Price display with source indication
+        const avgBuyPriceHtml = hasCostBasis ?
+            `<div class="text-sm font-medium" style="color: var(--accent-green);">${formatISK(avgBuyPrice)}</div>
+             <div class="text-xs" style="color: var(--text-muted);">✓ From transactions</div>` :
+            `<div class="text-sm font-medium" style="color: var(--text-muted);">${formatISK(avgBuyPrice)}</div>
              <div class="text-xs" style="color: var(--text-muted);">Market estimate</div>`;
 
-        // Create orders display
-        const totalOrders = activeOrders.total_buy_orders + activeOrders.total_sell_orders;
-        const ordersHtml = totalOrders > 0 ?
-            `<div class="text-sm font-medium" style="color: var(--accent-blue);">${totalOrders} orders</div>
-             <div class="text-xs" style="color: var(--text-muted);">${activeOrders.total_buy_orders}B / ${activeOrders.total_sell_orders}S</div>` :
-            `<div class="text-sm" style="color: var(--text-muted);">No orders</div>`;
+        // Create Live Price display
+        const livePriceHtml = livePrice > 0 ?
+            `<div class="text-sm font-medium" style="color: var(--accent-blue);">${formatISK(livePrice)}</div>
+             <div class="text-xs" style="color: var(--text-muted);">Current ${item.hub_name}</div>` :
+            `<div class="text-sm font-medium" style="color: var(--text-muted);">N/A</div>
+             <div class="text-xs" style="color: var(--text-muted);">No market data</div>`;
+
+        // Create Possible Profit display
+        const profitColor = possibleProfit > 0 ? 'var(--accent-green)' : possibleProfit < 0 ? 'var(--accent-red)' : 'var(--text-muted)';
+        const possibleProfitHtml = avgBuyPrice > 0 && livePrice > 0 ?
+            `<div class="text-sm font-medium" style="color: ${profitColor};">${formatISK(possibleProfit)}</div>
+             <div class="text-xs" style="color: var(--text-muted);">Per unit</div>` :
+            `<div class="text-sm font-medium" style="color: var(--text-muted);">N/A</div>
+             <div class="text-xs" style="color: var(--text-muted);">Missing data</div>`;
+
+        // Create Orders display in "current/total" format
+        const buyOrders = activeOrders.buy_orders ? activeOrders.buy_orders.length : 0;
+        const sellOrders = activeOrders.sell_orders ? activeOrders.sell_orders.length : 0;
+        const totalBuyQuantity = activeOrders.buy_orders ? activeOrders.buy_orders.reduce((sum, order) => sum + order.volume_remain, 0) : 0;
+        const totalSellQuantity = activeOrders.sell_orders ? activeOrders.sell_orders.reduce((sum, order) => sum + order.volume_remain, 0) : 0;
+
+        const ordersHtml = (buyOrders > 0 || sellOrders > 0) ?
+            `<div class="text-sm font-medium" style="color: var(--accent-blue);">${totalBuyQuantity + totalSellQuantity}/${item.quantity}</div>
+             <div class="text-xs" style="color: var(--text-muted);">${buyOrders}B / ${sellOrders}S orders</div>` :
+            `<div class="text-sm font-medium" style="color: var(--text-muted);">0/${item.quantity}</div>
+             <div class="text-xs" style="color: var(--text-muted);">No orders</div>`;
 
         row.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap">
@@ -886,18 +954,13 @@ function displayWarehouseItems() {
                 ${item.quantity.toLocaleString()}
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
-                ${costBasisHtml}
+                ${avgBuyPriceHtml}
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm font-medium isk-format" style="color: var(--text-primary);">${formatISK(avgBuyPrice)}</div>
-                <div class="text-xs" style="color: var(--text-muted);">Market average</div>
+                ${livePriceHtml}
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm font-medium isk-format" style="color: var(--accent-green);">${formatISK(minProfitableSellPrice)}</div>
-                <div class="text-xs" style="color: var(--text-muted);">For ${warehouseProfitMargin}% margin</div>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="text-lg font-bold isk-format ${actualProfit > 0 ? 'profit-positive' : 'profit-negative'}">${formatISK(actualProfit)}</span>
+                ${possibleProfitHtml}
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
                 ${ordersHtml}
@@ -934,6 +997,27 @@ function updateProfitMargin(value) {
 }
 
 /**
+ * Toggle between corporation and corporation+character assets
+ */
+function toggleAssetSource() {
+    includeCharacterAssets = !includeCharacterAssets;
+
+    const button = document.getElementById('asset-source-toggle');
+    const icon = button.querySelector('i');
+
+    if (includeCharacterAssets) {
+        button.innerHTML = '<i class="fas fa-users mr-2"></i>Corp + Character';
+        console.log('Switched to: Corporation + Character assets');
+    } else {
+        button.innerHTML = '<i class="fas fa-building mr-2"></i>Corp Assets';
+        console.log('Switched to: Corporation assets only');
+    }
+
+    // Refresh warehouse data with new asset source
+    loadWarehouseData();
+}
+
+/**
  * Display warehouse error
  */
 function displayWarehouseError(message) {
@@ -967,7 +1051,7 @@ async function refreshWarehouseData() {
 
         if (result.success) {
             warehouseData = result.data;
-            updateWarehouseSummary();
+            updateWarehouseSummary(result.data);  // Pass full data object
             updateWarehouseHubCounts();
             displayWarehouseItems();
             showNotification('Warehouse data refreshed successfully!', 'success');
@@ -991,6 +1075,57 @@ async function refreshWarehouseData() {
  */
 function showSkillsModal() {
     alert('Skills configuration modal will be implemented in a future update.\n\nCurrent skills are set to level V for Broker Relations and Accounting.\n\nThis results in:\n• Broker Fee: 2.5%\n• Sales Tax: ~4.5%');
+}
+
+/**
+ * Update unfinished courier contracts display
+ */
+function updateUnfinishedContracts(contracts) {
+    const card = document.getElementById('unfinished-contracts-card');
+    const countElement = document.getElementById('unfinished-contracts-count');
+
+    if (!card || !countElement) return;
+
+    if (!contracts || contracts.length === 0) {
+        card.style.display = 'none';
+        return;
+    }
+
+    // Show card and update count
+    card.style.display = 'block';
+    countElement.textContent = contracts.length.toLocaleString();
+
+    // Add click handler for details (tooltip or modal)
+    card.style.cursor = 'pointer';
+    card.title = `${contracts.length} unfinished contract${contracts.length > 1 ? 's' : ''}: ${contracts.map(c => c.title || 'Untitled').join(', ')}`;
+
+    // Optional: Add click event for detailed view
+    card.onclick = function() {
+        showUnfinishedContractsModal(contracts);
+    };
+}
+
+/**
+ * Show detailed unfinished contracts modal
+ */
+function showUnfinishedContractsModal(contracts) {
+    if (!contracts || contracts.length === 0) {
+        alert('No unfinished contracts to display.');
+        return;
+    }
+
+    const contractsList = contracts.map(contract => {
+        const statusBadge = contract.status === 'outstanding' ? '🟠 Outstanding' : '🔵 In Progress';
+        const issued = new Date(contract.date_issued).toLocaleDateString();
+        const expires = new Date(contract.date_expired).toLocaleDateString();
+        const accepted = contract.date_accepted ? new Date(contract.date_accepted).toLocaleDateString() : 'Not accepted';
+
+        return `• ${contract.title || 'Untitled'} (${statusBadge})
+  Collateral: ${formatISK(contract.collateral)} | Reward: ${formatISK(contract.reward)}
+  Volume: ${contract.volume.toLocaleString()} m³ | Issued: ${issued} | Expires: ${expires}`;
+    }).join('\n\n');
+
+    alert(`Unfinished Courier Contracts (${contracts.length}):\n\n${contractsList}`);
 }
 
 /**

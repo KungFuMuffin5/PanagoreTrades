@@ -49,12 +49,23 @@
             background-color: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: 4px;
-            padding: 1rem;
+            padding: 1.5rem;
             margin-bottom: 1rem;
+            min-height: 140px;
         }
 
         .zk-card:hover {
             background-color: var(--bg-tertiary);
+        }
+
+        /* Large number display for summary cards */
+        .summary-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+            font-family: 'Orbitron', monospace;
+            line-height: 1.2;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         /* Header Styling */
@@ -271,25 +282,6 @@
 
 
 
-        /* Tooltip styling */
-        .tooltip {
-            position: relative;
-        }
-        .tooltip:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1f2937;
-            color: white;
-            padding: 0.5rem;
-            border-radius: 0.375rem;
-            font-size: 0.75rem;
-            white-space: nowrap;
-            z-index: 10;
-            margin-bottom: 0.25rem;
-        }
 
         /* Collapsible section styling */
         .collapsible-header {
@@ -343,41 +335,51 @@
             padding-top: 0;
         }
 
-        /* Profit Margin Slider Styling */
+        /* Profit Margin Slider Styling - Using warehouse item hover colors */
         input[type="range"] {
             -webkit-appearance: none;
             appearance: none;
-            height: 6px;
-            background: var(--bg-tertiary);
-            border-radius: 3px;
+            height: 8px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
             outline: none;
         }
 
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 20px;
-            height: 20px;
-            background: var(--accent-green);
-            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--accent-blue);
+            border-radius: 4px;
             cursor: pointer;
-            border: 2px solid var(--bg-primary);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.2s ease;
         }
 
         input[type="range"]::-webkit-slider-thumb:hover {
-            background: #32d74b;
+            background: var(--bg-secondary);
+            border-color: var(--accent-green);
             transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
 
         input[type="range"]::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            background: var(--accent-green);
-            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--accent-blue);
+            border-radius: 4px;
             cursor: pointer;
-            border: 2px solid var(--bg-primary);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.2s ease;
+        }
+
+        input[type="range"]::-moz-range-thumb:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent-green);
         }
     </style>
 </head>
@@ -532,14 +534,14 @@
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <!-- Volume Filters -->
                     <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" data-tooltip="Minimum daily trading volume">
+                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);">
                             <i class="fas fa-chart-bar mr-1 text-xs" style="color: var(--accent-blue);"></i>Min Volume
                         </label>
                         <input type="number" id="min-volume" value="75" min="0" step="10"
                                class="w-full zk-input" placeholder="75">
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" data-tooltip="Maximum daily trading volume">
+                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
                             <i class="fas fa-chart-bar mr-1 text-xs" style="color: var(--accent-blue);"></i>Max Volume
                         </label>
                         <input type="number" id="max-volume" min="0" step="10"
@@ -548,14 +550,14 @@
 
                     <!-- Price Filters -->
                     <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" data-tooltip="Minimum item price in ISK">
+                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
                             <i class="fas fa-coins mr-1 text-xs" style="color: var(--accent-orange);"></i>Min Price (ISK)
                         </label>
                         <input type="number" id="min-price" value="100000" min="0" step="10000"
                                class="w-full zk-input" placeholder="100,000">
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" data-tooltip="Maximum item price in ISK">
+                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
                             <i class="fas fa-coins mr-1 text-xs" style="color: var(--accent-orange);"></i>Max Price (ISK)
                         </label>
                         <input type="number" id="max-price" min="0" step="10000"
@@ -566,14 +568,14 @@
                 <!-- Profit Filters Row -->
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
                     <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" data-tooltip="Minimum profit amount in ISK">
+                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
                             <i class="fas fa-money-bill-wave mr-1 text-xs" style="color: var(--accent-green);"></i>Min Profit (ISK)
                         </label>
                         <input type="number" id="min-profit" min="0" step="1000"
                                class="w-full zk-input" placeholder="No limit">
                     </div>
                     <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" data-tooltip="Maximum profit amount in ISK">
+                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
                             <i class="fas fa-money-bill-wave mr-1 text-xs" style="color: var(--accent-green);"></i>Max Profit (ISK)
                         </label>
                         <input type="number" id="max-profit" min="0" step="1000"
@@ -657,7 +659,7 @@
         <!-- Warehouse Tab Content -->
         <div id="warehouse-content" class="tab-content">
             <!-- Warehouse Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
                 <!-- Theoretical Value -->
                 <div class="zk-card">
                     <div class="flex items-center">
@@ -666,7 +668,7 @@
                         </div>
                         <div class="ml-4">
                             <p class="text-sm font-medium" style="color: var(--text-secondary);">Theoretical Value</p>
-                            <p class="text-2xl font-bold isk-format" style="color: var(--text-primary);" id="total-warehouse-value">Loading...</p>
+                            <p class="summary-number isk-format" style="color: var(--text-primary);" id="total-warehouse-value">Loading...</p>
                         </div>
                     </div>
                 </div>
@@ -679,7 +681,7 @@
                         </div>
                         <div class="ml-4">
                             <p class="text-sm font-medium" style="color: var(--text-secondary);">Actual Profit</p>
-                            <p class="text-2xl font-bold isk-format profit-positive" id="total-actual-profit">Loading...</p>
+                            <p class="summary-number isk-format profit-positive" id="total-actual-profit">Loading...</p>
                         </div>
                     </div>
                 </div>
@@ -692,26 +694,51 @@
                         </div>
                         <div class="ml-4">
                             <p class="text-sm font-medium" style="color: var(--text-secondary);">ISK in Orders</p>
-                            <p class="text-2xl font-bold isk-format" style="color: var(--text-primary);" id="isk-in-orders">Loading...</p>
+                            <p class="summary-number isk-format" style="color: var(--text-primary);" id="isk-in-orders">Loading...</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Total Items -->
+                <!-- Courier Collateral -->
                 <div class="zk-card">
                     <div class="flex items-center">
                         <div class="p-3 rounded" style="background-color: var(--bg-tertiary); border: 1px solid var(--border-color);">
-                            <i class="fas fa-boxes text-xl" style="color: var(--accent-orange);"></i>
+                            <i class="fas fa-shipping-fast text-xl" style="color: var(--accent-orange);"></i>
                         </div>
                         <div class="ml-4">
-                            <p class="text-sm font-medium" style="color: var(--text-secondary);">Total Items</p>
-                            <p class="text-2xl font-bold orbitron" style="color: var(--text-primary);" id="total-warehouse-items">Loading...</p>
+                            <p class="text-sm font-medium" style="color: var(--text-secondary);">Courier Collateral</p>
+                            <p class="summary-number" style="color: var(--text-primary);" id="courier-collateral">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Open Courier Contracts -->
+                <div class="zk-card">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded" style="background-color: var(--bg-tertiary); border: 1px solid var(--border-color);">
+                            <i class="fas fa-clipboard-list text-xl" style="color: var(--accent-blue);"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium" style="color: var(--text-secondary);">Open Contracts</p>
+                            <p class="summary-number" style="color: var(--text-primary);" id="open-courier-contracts">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Unfinished Contracts -->
+                <div class="zk-card" id="unfinished-contracts-card" style="display: none;">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded" style="background-color: var(--bg-tertiary); border: 1px solid var(--border-color);">
+                            <i class="fas fa-clock text-xl" style="color: var(--accent-orange);"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium" style="color: var(--text-secondary);">Unfinished</p>
+                            <p class="summary-number" style="color: var(--text-primary);" id="unfinished-contracts-count">0</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Precision Metrics -->
+<!-- Precision Metrics -->
             <div class="zk-card mb-8" id="precision-metrics" style="display: none;">
                 <h3 class="text-lg font-bold mb-4 orbitron" style="color: var(--text-primary);">Enhanced Analysis Metrics</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -740,6 +767,9 @@
                         <button onclick="refreshWarehouseData()" class="zk-button">
                             <i class="fas fa-sync-alt mr-2"></i>Refresh Data
                         </button>
+                        <button onclick="toggleAssetSource()" class="zk-button-secondary" id="asset-source-toggle">
+                            <i class="fas fa-building mr-2"></i>Corp Assets
+                        </button>
                         <button onclick="showSkillsModal()" class="zk-button-secondary">
                             <i class="fas fa-user-graduate mr-2"></i>Update Skills
                         </button>
@@ -756,10 +786,10 @@
                     </div>
                     <div class="flex items-center space-x-4">
                         <label class="text-sm" style="color: var(--text-secondary);">0%</label>
-                        <input type="range" id="profit-margin-slider" min="0" max="50" value="5" step="1"
+                        <input type="range" id="profit-margin-slider" min="0" max="100" value="5" step="1"
                                class="flex-1" style="accent-color: var(--accent-green);"
                                oninput="updateProfitMargin(this.value)">
-                        <label class="text-sm" style="color: var(--text-secondary);">50%</label>
+                        <label class="text-sm" style="color: var(--text-secondary);">100%</label>
                     </div>
                     <div class="mt-2 text-xs" style="color: var(--text-muted);">
                         Adjust to see minimum sell prices for desired profit margin across all items
@@ -767,7 +797,7 @@
                 </div>
 
                 <!-- Hub Selection -->
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                     <div class="hub-card" onclick="selectWarehouseHub('all')" id="hub-all">
                         <i class="fas fa-globe text-2xl mb-2" style="color: var(--accent-blue);"></i>
                         <p class="font-medium" style="color: var(--text-primary);">All Hubs</p>
@@ -792,6 +822,11 @@
                         <i class="fas fa-building text-2xl mb-2" style="color: var(--accent-blue);"></i>
                         <p class="font-medium" style="color: var(--text-primary);">Dodixie</p>
                         <p class="text-sm" style="color: var(--text-muted);" id="dodixie-items-count">0 items</p>
+                    </div>
+                    <div class="hub-card" onclick="selectWarehouseHub('Hek')" id="hub-Hek">
+                        <i class="fas fa-building text-2xl mb-2" style="color: var(--accent-red);"></i>
+                        <p class="font-medium" style="color: var(--text-primary);">Hek</p>
+                        <p class="text-sm" style="color: var(--text-muted);" id="hek-items-count">0 items</p>
                     </div>
                 </div>
             </div>
@@ -827,16 +862,13 @@
                                         Quantity
                                     </th>
                                     <th class="px-6 py-3 text-left" style="color: var(--text-primary);">
-                                        Cost Basis
+                                        Avg. Buy Price
                                     </th>
                                     <th class="px-6 py-3 text-left" style="color: var(--text-primary);">
-                                        Avg Buy Price
+                                        Live Price
                                     </th>
                                     <th class="px-6 py-3 text-left" style="color: var(--text-primary);">
-                                        Min Sell Price
-                                    </th>
-                                    <th class="px-6 py-3 text-left" style="color: var(--text-primary);">
-                                        Actual Profit
+                                        Possible Profit
                                     </th>
                                     <th class="px-6 py-3 text-left" style="color: var(--text-primary);">
                                         Orders

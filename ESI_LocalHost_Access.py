@@ -44,6 +44,8 @@ SCOPES = [
     'esi-assets.read_assets.v1',
     'esi-location.read_location.v1',
     'esi-universe.read_structures.v1',
+    'esi-contracts.read_corporation_contracts.v1',  # Corporation contracts
+    'esi-contracts.read_character_contracts.v1',   # Character contracts
 ]
 
 # Server settings
@@ -775,6 +777,82 @@ def debug_corporation_access(esi_client):
 
         except Exception as e:
             print(f"[ERROR] {e}")
+
+def get_corporation_contracts(esi_client):
+    """Get corporation contracts as DataFrame with comprehensive data"""
+    endpoint = f"/corporations/{esi_client.corporation_id}/contracts/"
+    contracts = esi_client.make_esi_request(endpoint)
+
+    if not contracts:
+        return pd.DataFrame()  # Empty DataFrame if no contracts
+
+    df = pd.DataFrame(contracts)
+
+    # Add comprehensive metadata
+    df['corporation_id'] = esi_client.corporation_id
+    df['corporation_name'] = esi_client.corporation_name
+    df['character_id'] = esi_client.character_id
+    df['character_name'] = esi_client.character_name
+    df['api_timestamp'] = datetime.now().isoformat()
+    df['data_type'] = 'corporation_contracts'
+
+    # Filter for courier contracts and add analysis
+    if len(df) > 0:
+        # Filter for courier contracts (type == 'courier')
+        courier_contracts = df[df['type'] == 'courier'] if 'type' in df.columns else df
+
+        if not courier_contracts.empty:
+            # Calculate courier contract metrics
+            total_contracts = len(courier_contracts)
+            outstanding_contracts = len(courier_contracts[courier_contracts['status'] == 'outstanding']) if 'status' in courier_contracts.columns else 0
+            in_progress_contracts = len(courier_contracts[courier_contracts['status'] == 'in_progress']) if 'status' in courier_contracts.columns else 0
+            total_collateral = courier_contracts['collateral'].sum() if 'collateral' in courier_contracts.columns else 0
+            total_reward = courier_contracts['reward'].sum() if 'reward' in courier_contracts.columns else 0
+
+            print(f"Corporation Courier Contracts: {total_contracts} total")
+            print(f"Outstanding: {outstanding_contracts}, In Progress: {in_progress_contracts}")
+            print(f"Total Collateral: {total_collateral:,.2f} ISK")
+            print(f"Total Reward: {total_reward:,.2f} ISK")
+
+    return df
+
+def get_character_contracts(esi_client):
+    """Get character contracts as DataFrame with comprehensive data"""
+    endpoint = f"/characters/{esi_client.character_id}/contracts/"
+    contracts = esi_client.make_esi_request(endpoint)
+
+    if not contracts:
+        return pd.DataFrame()  # Empty DataFrame if no contracts
+
+    df = pd.DataFrame(contracts)
+
+    # Add comprehensive metadata
+    df['character_id'] = esi_client.character_id
+    df['character_name'] = esi_client.character_name
+    df['corporation_id'] = esi_client.corporation_id
+    df['corporation_name'] = esi_client.corporation_name
+    df['api_timestamp'] = datetime.now().isoformat()
+    df['data_type'] = 'character_contracts'
+
+    # Filter for courier contracts and add analysis
+    if len(df) > 0:
+        # Filter for courier contracts (type == 'courier')
+        courier_contracts = df[df['type'] == 'courier'] if 'type' in df.columns else df
+
+        if not courier_contracts.empty:
+            # Calculate courier contract metrics
+            total_contracts = len(courier_contracts)
+            outstanding_contracts = len(courier_contracts[courier_contracts['status'] == 'outstanding']) if 'status' in courier_contracts.columns else 0
+            in_progress_contracts = len(courier_contracts[courier_contracts['status'] == 'in_progress']) if 'status' in courier_contracts.columns else 0
+            total_collateral = courier_contracts['collateral'].sum() if 'collateral' in courier_contracts.columns else 0
+            total_reward = courier_contracts['reward'].sum() if 'reward' in courier_contracts.columns else 0
+
+            print(f"Character Courier Contracts: {total_contracts} total")
+            print(f"Outstanding: {outstanding_contracts}, In Progress: {in_progress_contracts}")
+            print(f"Total Collateral: {total_collateral:,.2f} ISK")
+            print(f"Total Reward: {total_reward:,.2f} ISK")
+
+    return df
 
 # =============================================================================
 # CHARACTER-SPECIFIC TRADING FUNCTIONS (FALLBACK)

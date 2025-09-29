@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PanagoreTrades - Courier Contract Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a1a; color: #ffffff; padding: 20px; }
+        .card { background-color: #2a2a2a; border: 1px solid #444; border-radius: 8px; padding: 20px; margin: 10px; }
+        .value { font-size: 24px; font-weight: bold; color: #00ff00; }
+        .loading { color: #ffff00; }
+        .error { color: #ff0000; }
+        .success { color: #00ff00; }
+    </style>
+</head>
+<body>
+    <h1>PanagoreTrades - Courier Contract Test</h1>
+
+    <div class="card">
+        <h3>Courier Collateral</h3>
+        <div class="value" id="courier-collateral">Loading...</div>
+    </div>
+
+    <div class="card">
+        <h3>Open Contracts</h3>
+        <div class="value" id="open-courier-contracts">Loading...</div>
+    </div>
+
+    <div class="card">
+        <h3>Status</h3>
+        <div id="status" class="loading">Initializing...</div>
+    </div>
+
+    <button onclick="loadData()">Reload Data</button>
+
+    <script>
+        function formatISK(value) {
+            return new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value) + ' ISK';
+        }
+
+        async function loadData() {
+            document.getElementById('status').textContent = 'Loading...';
+            document.getElementById('status').className = 'loading';
+
+            // Set initial N/A values
+            document.getElementById('courier-collateral').textContent = 'N/A';
+            document.getElementById('open-courier-contracts').textContent = 'N/A';
+
+            try {
+                const response = await fetch('/api/warehouse?enhanced=true');
+                const result = await response.json();
+
+                if (result.success && result.data.courier_contracts) {
+                    const courier = result.data.courier_contracts;
+
+                    // Update courier collateral
+                    if (courier.total_collateral !== undefined && courier.total_collateral !== null) {
+                        document.getElementById('courier-collateral').textContent = formatISK(courier.total_collateral);
+                    }
+
+                    // Update open contracts
+                    const openContracts = (courier.outstanding_contracts || 0) + (courier.in_progress_contracts || 0);
+                    document.getElementById('open-courier-contracts').textContent = openContracts.toString();
+
+                    document.getElementById('status').textContent = 'Success! Data loaded.';
+                    document.getElementById('status').className = 'success';
+                } else {
+                    throw new Error('No courier contract data in response');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.message + ' - Showing N/A values';
+                document.getElementById('status').className = 'error';
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+        });
+    </script>
+</body>
+</html>
