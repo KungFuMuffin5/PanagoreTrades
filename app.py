@@ -170,18 +170,22 @@ class TradingAnalyzer:
 
         # Convert to list of dictionaries
         opportunities = []
-        for _, row in filtered.head(50).iterrows():  # Limit to top 50
+        for _, row in filtered.iterrows():  # Return all filtered results (removed .head(50) limit)
+            # Skip rows with NaN typename
+            if pd.isna(row['typename']):
+                continue
+
             opportunities.append({
                 'typeid': int(row['typeid']),
-                'typename': row['typename'],
-                'max_price': float(row['max_price']),
-                'min_price': float(row['min_price']),
-                'delta': float(row['delta']),
-                'delta_percentage': float(row['delta_percentage']),
-                'max_tradehub': row['max_tradehub'],
-                'min_tradehub': row['min_tradehub'],
-                'max_vol_yesterday': int(row['max_vol_yesterday']),
-                'min_vol_yesterday': int(row['min_vol_yesterday']),
+                'typename': str(row['typename']) if pd.notna(row['typename']) else 'Unknown',
+                'max_price': float(row['max_price']) if pd.notna(row['max_price']) else 0.0,
+                'min_price': float(row['min_price']) if pd.notna(row['min_price']) else 0.0,
+                'delta': float(row['delta']) if pd.notna(row['delta']) else 0.0,
+                'delta_percentage': float(row['delta_percentage']) if pd.notna(row['delta_percentage']) else 0.0,
+                'max_tradehub': str(row['max_tradehub']) if pd.notna(row['max_tradehub']) else 'Unknown',
+                'min_tradehub': str(row['min_tradehub']) if pd.notna(row['min_tradehub']) else 'Unknown',
+                'max_vol_yesterday': int(row['max_vol_yesterday']) if pd.notna(row['max_vol_yesterday']) else 0,
+                'min_vol_yesterday': int(row['min_vol_yesterday']) if pd.notna(row['min_vol_yesterday']) else 0,
             })
 
         return opportunities
@@ -255,16 +259,16 @@ def get_wallet_info():
 
 @app.route('/api/trades')
 def get_trades():
-    """Get trading opportunities"""
+    """Get trading opportunities - returns all data unfiltered for client-side filtering"""
     try:
-        # Get query parameters
+        # Get query parameters (optional - defaults to no filtering)
         selected_hubs = request.args.getlist('hubs')
-        min_margin = float(request.args.get('min_margin', 20))
-        max_margin = float(request.args.get('max_margin', 1500))
-        min_volume = int(request.args.get('min_volume', 75))
+        min_margin = float(request.args.get('min_margin', 0))  # Changed from 20 to 0
+        max_margin = float(request.args.get('max_margin', 999999))  # Changed from 1500 to unlimited
+        min_volume = int(request.args.get('min_volume', 0))  # Changed from 75 to 0
         max_volume = request.args.get('max_volume')
         max_volume = int(max_volume) if max_volume else None
-        min_price = int(request.args.get('min_price', 100000))
+        min_price = int(request.args.get('min_price', 0))  # Changed from 100000 to 0
         max_price = request.args.get('max_price')
         max_price = int(max_price) if max_price else None
         min_profit = request.args.get('min_profit')

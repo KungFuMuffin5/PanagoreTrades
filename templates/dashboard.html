@@ -7,7 +7,10 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
     <style>
         /* ===========================================
            zKillboard-Inspired Dark Theme
@@ -292,6 +295,259 @@
             animation: spin 1s linear infinite;
         }
 
+        /* DataTables Dark Theme Override */
+        #trades-table {
+            background-color: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+            border: none !important;
+        }
+
+        #trades-table thead th {
+            background-color: var(--bg-tertiary) !important;
+            color: var(--text-primary) !important;
+            border-bottom: 2px solid var(--border-color) !important;
+            padding: 8px !important;
+            font-size: 0.875rem !important;
+            font-weight: 600 !important;
+        }
+
+        #trades-table thead #column-filters th {
+            background-color: var(--bg-secondary) !important;
+            padding: 4px !important;
+            border-bottom: 1px solid var(--border-color) !important;
+        }
+
+        #trades-table tbody tr {
+            background-color: var(--bg-secondary) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+        }
+
+        #trades-table tbody tr:hover {
+            background-color: var(--bg-tertiary) !important;
+        }
+
+        #trades-table tbody td {
+            color: var(--text-primary) !important;
+            padding: 6px 8px !important;
+            font-size: 0.8125rem !important;
+        }
+
+        #trades-table thead #column-filters input {
+            width: 100% !important;
+            padding: 4px !important;
+            background-color: var(--bg-tertiary) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-primary) !important;
+            font-size: 0.75rem !important;
+            border-radius: 3px !important;
+            box-sizing: border-box !important;
+        }
+
+        #trades-table thead #column-filters input:focus {
+            outline: none !important;
+            border-color: var(--accent-blue) !important;
+        }
+
+        .dataTables_wrapper {
+            color: var(--text-primary) !important;
+        }
+
+        .dataTables_length,
+        .dataTables_filter,
+        .dataTables_info,
+        .dataTables_paginate {
+            color: var(--text-primary) !important;
+            font-size: 0.875rem !important;
+        }
+
+        .dataTables_length select {
+            background-color: var(--bg-tertiary) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-primary) !important;
+            padding: 4px !important;
+            border-radius: 3px !important;
+        }
+
+        .dataTables_paginate .paginate_button {
+            background-color: var(--bg-tertiary) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 3px !important;
+            padding: 4px 10px !important;
+            margin: 0 2px !important;
+        }
+
+        .dataTables_paginate .paginate_button:hover {
+            background-color: var(--accent-blue) !important;
+            color: white !important;
+            border-color: var(--accent-blue) !important;
+        }
+
+        .dataTables_paginate .paginate_button.current {
+            background-color: var(--accent-blue) !important;
+            color: white !important;
+            border-color: var(--accent-blue) !important;
+        }
+
+        .dataTables_paginate .paginate_button.disabled {
+            opacity: 0.5 !important;
+            cursor: not-allowed !important;
+        }
+
+        /* Trade Hub Route Filter */
+        .hub-checkbox-label {
+            display: flex;
+            align-items: center;
+            padding: 6px 12px;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.875rem;
+        }
+
+        .hub-checkbox-label:hover {
+            background-color: var(--bg-tertiary);
+            border-color: var(--accent-blue);
+        }
+
+        .hub-checkbox-label.selected {
+            background-color: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+            box-shadow: 0 0 10px rgba(0, 122, 204, 0.3);
+        }
+
+        .hub-checkbox {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        #route-svg path {
+            stroke-width: 2.5;
+            fill: none;
+            stroke: url(#lineGradient);
+            opacity: 0;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px rgba(0, 122, 204, 0.6));
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: organicFlow 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        #route-svg path.active {
+            animation: organicFlow 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards,
+                       breathe 4s ease-in-out infinite 2.5s;
+        }
+
+        @keyframes organicFlow {
+            0% {
+                stroke-dashoffset: 1000;
+                opacity: 0;
+                stroke-width: 1;
+            }
+            40% {
+                opacity: 0.6;
+                stroke-width: 4;
+            }
+            100% {
+                stroke-dashoffset: 0;
+                opacity: 0.85;
+                stroke-width: 2.5;
+            }
+        }
+
+        @keyframes breathe {
+            0%, 100% {
+                stroke-width: 2.5;
+                opacity: 0.85;
+                filter: drop-shadow(0 0 8px rgba(0, 122, 204, 0.6));
+            }
+            50% {
+                stroke-width: 3.5;
+                opacity: 1;
+                filter: drop-shadow(0 0 15px rgba(0, 122, 204, 0.9));
+            }
+        }
+
+        /* Rifter Ship - PNG Based */
+        .hauler-ship {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            pointer-events: none;
+            filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.4));
+        }
+
+        .hauler-ship img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            animation: shipBob 3s ease-in-out infinite;
+        }
+
+        /* Animated overlay effects */
+        .hauler-ship::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 30% 50%, rgba(16, 185, 129, 0.3) 0%, transparent 60%);
+            animation: enginePulse 1.5s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .hauler-ship::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.6), transparent);
+            left: -25px;
+            top: 50%;
+            animation: warpTrail 2s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes shipBob {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-3px); }
+        }
+
+        @keyframes enginePulse {
+            0%, 100% { opacity: 0.4; transform: scale(0.9); }
+            50% { opacity: 0.8; transform: scale(1.1); }
+        }
+
+        @keyframes warpTrail {
+            0% { opacity: 0; transform: translateX(0px); }
+            50% { opacity: 1; }
+            100% { opacity: 0; transform: translateX(-15px); }
+        }
+
+        @keyframes engineGlow {
+            0%, 100% {
+                opacity: 0.8;
+                box-shadow: 0 0 8px rgba(253, 126, 20, 0.8);
+            }
+            50% {
+                opacity: 1;
+                box-shadow: 0 0 15px rgba(253, 126, 20, 1);
+            }
+        }
+
+        @keyframes cockpitBlink {
+            0%, 90%, 100% {
+                opacity: 0.6;
+            }
+            95% {
+                opacity: 1;
+            }
+        }
 
         /* Chart container with fixed height */
         .chart-container {
@@ -519,135 +775,81 @@
             </div>
         </div>
 
-        <!-- Controls Section -->
-        <div class="zk-card">
-            <h2 class="text-xl font-bold mb-6 flex items-center orbitron" style="color: var(--text-primary);">
-                <i class="fas fa-sliders-h mr-3" style="color: var(--accent-blue);"></i>Trading Filters
-            </h2>
-
-            <!-- Basic Filters Section -->
-            <div class="filter-section">
-                <div class="filter-header">
-                    <i class="fas fa-chart-line mr-2" style="color: var(--accent-blue);"></i>
-                    Basic Filters
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <!-- Trade Hub Selection -->
-                    <div class="md:col-span-1">
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);">
-                            <i class="fas fa-map-marker-alt mr-1 text-xs" style="color: var(--accent-blue);"></i>Trade Hubs
-                        </label>
-                        <div class="space-y-2" id="hub-checkboxes">
-                            <!-- Dynamically populated -->
-                        </div>
-                    </div>
-
-                    <!-- Margin Filters -->
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);">
-                            <i class="fas fa-percentage mr-1 text-xs" style="color: var(--accent-blue);"></i>Min Margin %
-                        </label>
-                        <input type="number" id="min-margin" value="20" min="0" max="1000" class="w-full zk-input">
-                    </div>
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);">
-                            <i class="fas fa-percentage mr-1 text-xs" style="color: var(--accent-blue);"></i>Max Margin %
-                        </label>
-                        <input type="number" id="max-margin" value="1500" min="0" max="5000" class="w-full zk-input">
-                    </div>
-
-                    <!-- Update Button -->
-                    <div class="flex items-end">
-                        <button onclick="updateTrades()" class="w-full zk-button">
-                            <i class="fas fa-sync-alt mr-2"></i>Update
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Advanced Filters Section -->
-            <div class="advanced-filters">
-                <div class="collapsible-header" onclick="toggleAdvancedFilters()">
-                    <div class="filter-header" style="margin-bottom: 0;">
-                        <i class="fas fa-cogs" style="color: var(--accent-orange);"></i>
-                        <span>Advanced Filters</span>
-                    </div>
-                    <i class="fas fa-chevron-down collapse-icon" id="advanced-filters-icon"></i>
-                </div>
-                <div class="collapsible-content collapsed" id="advanced-filters-content">
-                    <div class="advanced-filters-content">
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <!-- Volume Filters -->
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);">
-                            <i class="fas fa-chart-bar mr-1 text-xs" style="color: var(--accent-blue);"></i>Min Volume
-                        </label>
-                        <input type="number" id="min-volume" value="75" min="0" step="10"
-                               class="w-full zk-input" placeholder="75">
-                    </div>
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
-                            <i class="fas fa-chart-bar mr-1 text-xs" style="color: var(--accent-blue);"></i>Max Volume
-                        </label>
-                        <input type="number" id="max-volume" min="0" step="10"
-                               class="w-full zk-input" placeholder="No limit">
-                    </div>
-
-                    <!-- Price Filters -->
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
-                            <i class="fas fa-coins mr-1 text-xs" style="color: var(--accent-orange);"></i>Min Price (ISK)
-                        </label>
-                        <input type="number" id="min-price" value="100000" min="0" step="10000"
-                               class="w-full zk-input" placeholder="100,000">
-                    </div>
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
-                            <i class="fas fa-coins mr-1 text-xs" style="color: var(--accent-orange);"></i>Max Price (ISK)
-                        </label>
-                        <input type="number" id="max-price" min="0" step="10000"
-                               class="w-full zk-input" placeholder="No limit">
-                    </div>
-                </div>
-
-                <!-- Profit Filters Row -->
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
-                            <i class="fas fa-money-bill-wave mr-1 text-xs" style="color: var(--accent-green);"></i>Min Profit (ISK)
-                        </label>
-                        <input type="number" id="min-profit" min="0" step="1000"
-                               class="w-full zk-input" placeholder="No limit">
-                    </div>
-                    <div>
-                        <label class="block mb-2 text-sm font-medium" style="color: var(--text-primary);" >
-                            <i class="fas fa-money-bill-wave mr-1 text-xs" style="color: var(--accent-green);"></i>Max Profit (ISK)
-                        </label>
-                        <input type="number" id="max-profit" min="0" step="1000"
-                               class="w-full zk-input" placeholder="No limit">
-                    </div>
-
-                    <!-- Clear Filters Button -->
-                    <div class="flex items-end md:col-start-4">
-                        <button onclick="clearFilters()"
-                                class="w-full zk-button-secondary py-2 px-4">
-                            <i class="fas fa-eraser mr-2"></i>Clear
-                        </button>
-                    </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Trading Opportunities -->
         <div class="zk-table">
-            <div class="p-6" style="border-bottom: 1px solid var(--border-color);">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-xl font-bold orbitron" style="color: var(--text-primary);">Trading Opportunities</h2>
-                    <div class="flex items-center">
-                        <span class="text-sm mr-2" style="color: var(--text-secondary);">Found:</span>
-                        <span class="text-sm font-medium px-2.5 py-0.5 rounded orbitron" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);" id="opportunity-count">0</span>
+            <div class="p-4" style="border-bottom: 1px solid var(--border-color);">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-bold orbitron" style="color: var(--text-primary);">
+                        <i class="fas fa-chart-line mr-2" style="color: var(--accent-blue);"></i>Trading Opportunities
+                    </h2>
+                </div>
+
+                <!-- Global Search -->
+                <div class="mb-3">
+                    <input type="text" id="global-search" placeholder="Search all columns..." class="w-full zk-input text-sm py-2">
+                </div>
+
+                <!-- Trade Hub Route Filter -->
+                <div class="mb-4 p-4" style="background-color: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-bold" style="color: var(--text-primary);">
+                            <i class="fas fa-route mr-2" style="color: var(--accent-blue);"></i>Select Trade Routes
+                        </h3>
+                        <button onclick="clearHubSelection()" class="text-xs px-3 py-1 rounded" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-secondary);">
+                            <i class="fas fa-times mr-1"></i>Clear All
+                        </button>
+                    </div>
+
+                    <div class="relative" style="height: 220px;">
+                        <!-- SVG for animated connections -->
+                        <svg id="route-svg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;">
+                            <defs>
+                                <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:var(--accent-orange);stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:var(--accent-green);stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+
+                        <!-- Buy Hubs (Left) -->
+                        <div style="position: absolute; left: 20px; top: 0; z-index: 2;">
+                            <div class="text-xs font-bold mb-2" style="color: var(--accent-orange);">
+                                <i class="fas fa-shopping-cart mr-1"></i>Buy From
+                            </div>
+                            <div id="buy-hubs" class="space-y-2">
+                                <!-- Dynamically populated -->
+                            </div>
+                        </div>
+
+                        <!-- Sell Hubs (Right) -->
+                        <div style="position: absolute; right: 20px; top: 0; z-index: 2;">
+                            <div class="text-xs font-bold mb-2" style="color: var(--accent-green);">
+                                <i class="fas fa-hand-holding-usd mr-1"></i>Sell To
+                            </div>
+                            <div id="sell-hubs" class="space-y-2">
+                                <!-- Dynamically populated -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Soft Filters -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs mb-1" style="color: var(--text-secondary);">Min Margin %</label>
+                        <input type="number" id="soft-min-margin" placeholder="0" class="w-full zk-input text-sm py-1">
+                    </div>
+                    <div>
+                        <label class="block text-xs mb-1" style="color: var(--text-secondary);">Max Margin %</label>
+                        <input type="number" id="soft-max-margin" placeholder="Unlimited" class="w-full zk-input text-sm py-1">
+                    </div>
+                    <div>
+                        <label class="block text-xs mb-1" style="color: var(--text-secondary);">Min Volume</label>
+                        <input type="number" id="soft-min-volume" placeholder="0" class="w-full zk-input text-sm py-1">
+                    </div>
+                    <div>
+                        <label class="block text-xs mb-1" style="color: var(--text-secondary);">Min Price (ISK)</label>
+                        <input type="number" id="soft-min-price" placeholder="0" class="w-full zk-input text-sm py-1">
                     </div>
                 </div>
             </div>
@@ -660,28 +862,28 @@
 
             <!-- Trading Table -->
             <div id="trades-container" class="hidden">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full">
+                <div class="overflow-x-auto p-4">
+                    <table id="trades-table" class="display compact nowrap" style="width:100%">
                         <thead>
                             <tr>
-                                <th class="px-6 py-3 text-left sortable" data-sort="typename" style="color: var(--text-primary);">
-                                    Item <i class="fas fa-sort sort-icon" style="color: var(--accent-blue);"></i>
-                                </th>
-                                <th class="px-6 py-3 text-left sortable" data-sort="delta_percentage" style="color: var(--text-primary);">
-                                    Margin <i class="fas fa-sort sort-icon sort-active" style="color: var(--accent-blue);"></i>
-                                </th>
-                                <th class="px-6 py-3 text-left sortable" data-sort="delta" style="color: var(--text-primary);">
-                                    Profit <i class="fas fa-sort sort-icon" style="color: var(--accent-blue);"></i>
-                                </th>
-                                <th class="px-6 py-3 text-left sortable" data-sort="route" style="color: var(--text-primary);">
-                                    Route <i class="fas fa-sort sort-icon" style="color: var(--accent-blue);"></i>
-                                </th>
-                                <th class="px-6 py-3 text-left sortable" data-sort="min_vol_yesterday" style="color: var(--text-primary);">
-                                    Volume <i class="fas fa-sort sort-icon" style="color: var(--accent-blue);"></i>
-                                </th>
-                                <th class="px-6 py-3 text-left sortable" data-sort="min_price" style="color: var(--text-primary);">
-                                    Prices <i class="fas fa-sort sort-icon" style="color: var(--accent-blue);"></i>
-                                </th>
+                                <th>Item</th>
+                                <th>Margin %</th>
+                                <th>Profit</th>
+                                <th>Route</th>
+                                <th>Buy Vol</th>
+                                <th>Sell Vol</th>
+                                <th>Buy Price</th>
+                                <th>Sell Price</th>
+                            </tr>
+                            <tr id="column-filters">
+                                <th>Item</th>
+                                <th>Margin %</th>
+                                <th>Profit</th>
+                                <th>Route</th>
+                                <th>Buy Vol</th>
+                                <th>Sell Vol</th>
+                                <th>Buy Price</th>
+                                <th>Sell Price</th>
                             </tr>
                         </thead>
                         <tbody id="trades-tbody">
@@ -764,7 +966,7 @@
                             <i class="fas fa-clipboard-list text-lg" style="color: var(--accent-blue);"></i>
                         </div>
                         <div class="ml-4">
-                            <p class="text-xs font-medium" style="color: var(--text-secondary);">Open Contracts</p>
+                            <p class="text-xs font-medium" style="color: var(--text-secondary);">Open Courier Contracts</p>
                             <p class="summary-number" style="color: var(--text-primary);" id="open-courier-contracts">Loading...</p>
                         </div>
                     </div>

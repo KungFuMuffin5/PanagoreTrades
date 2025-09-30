@@ -7,6 +7,7 @@ let profitChart = null;
 let updateInterval = null;
 let currentSort = { column: 'delta_percentage', direction: 'desc' };
 let tradesData = [];
+let tradesTable = null; // DataTables instance
 let warehouseData = null;
 let selectedWarehouseHub = 'all';
 let currentTab = 'trading';
@@ -32,12 +33,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     initializeDashboard();
-    setupTableSorting();
-    initializeAdvancedFilters();
     initializeTabs();
     loadWalletInfo();
-    loadTradeHubs();
     loadProfitHistory();
+    loadTradeHubs();
     updateTrades();
 
     // Set up auto-refresh every 25 minutes with change detection
@@ -378,104 +377,6 @@ function showNotification(message, type = 'info') {
 }
 
 
-/**
- * Setup table sorting functionality
- */
-function setupTableSorting() {
-    const headers = document.querySelectorAll('.sortable');
-
-    headers.forEach(header => {
-        header.addEventListener('click', function() {
-            const column = this.getAttribute('data-sort');
-
-            // Update sort direction
-            if (currentSort.column === column) {
-                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
-            } else {
-                currentSort.column = column;
-                currentSort.direction = 'desc';
-            }
-
-            // Update sort icons
-            updateSortIcons();
-
-            // Sort and display data
-            sortAndDisplayTrades();
-        });
-    });
-}
-
-/**
- * Update sort icons to show current sorting
- */
-function updateSortIcons() {
-    const headers = document.querySelectorAll('.sortable');
-
-    headers.forEach(header => {
-        const icon = header.querySelector('.sort-icon');
-        const column = header.getAttribute('data-sort');
-
-        icon.classList.remove('sort-active', 'fa-sort-up', 'fa-sort-down');
-        icon.classList.add('fa-sort');
-
-        if (column === currentSort.column) {
-            icon.classList.add('sort-active');
-            icon.classList.remove('fa-sort');
-            icon.classList.add(currentSort.direction === 'asc' ? 'fa-sort-up' : 'fa-sort-down');
-        }
-    });
-}
-
-/**
- * Sort and display trades data
- */
-function sortAndDisplayTrades() {
-    if (!tradesData.length) return;
-
-    const sortedData = [...tradesData].sort((a, b) => {
-        let aVal, bVal;
-
-        switch (currentSort.column) {
-            case 'typename':
-                aVal = a.typename.toLowerCase();
-                bVal = b.typename.toLowerCase();
-                break;
-            case 'delta_percentage':
-                aVal = a.delta_percentage;
-                bVal = b.delta_percentage;
-                break;
-            case 'delta':
-                aVal = a.delta;
-                bVal = b.delta;
-                break;
-            case 'route':
-                aVal = `${a.min_tradehub}-${a.max_tradehub}`;
-                bVal = `${b.min_tradehub}-${b.max_tradehub}`;
-                break;
-            case 'min_vol_yesterday':
-                aVal = a.min_vol_yesterday;
-                bVal = b.min_vol_yesterday;
-                break;
-            case 'min_price':
-                aVal = a.min_price;
-                bVal = b.min_price;
-                break;
-            default:
-                aVal = a.delta_percentage;
-                bVal = b.delta_percentage;
-        }
-
-        if (typeof aVal === 'string') {
-            return currentSort.direction === 'asc' ?
-                aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-        } else {
-            return currentSort.direction === 'asc' ?
-                aVal - bVal : bVal - aVal;
-        }
-    });
-
-    displayTradingOpportunities(sortedData);
-}
 
 /**
  * Load wallet information
@@ -513,32 +414,6 @@ async function loadWalletInfo() {
     }
 }
 
-/**
- * Load available trade hubs
- */
-async function loadTradeHubs() {
-    try {
-        const response = await fetch('/api/hubs');
-        const data = await response.json();
-
-        const container = document.getElementById('hub-checkboxes');
-        container.innerHTML = '';
-
-        data.hubs.forEach(hub => {
-            const div = document.createElement('div');
-            div.className = 'flex items-center';
-            div.innerHTML = `
-                <input type="checkbox" id="hub-${hub}" value="${hub}"
-                       checked class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                <label for="hub-${hub}" class="ml-2 text-sm text-gray-700">${hub}</label>
-            `;
-            container.appendChild(div);
-        });
-
-    } catch (error) {
-        console.error('Error loading trade hubs:', error);
-    }
-}
 
 /**
  * Load profit history and create chart
@@ -571,6 +446,7 @@ async function loadProfitHistory() {
  * Update trading opportunities
  */
 async function updateTrades() {
+    console.log('updateTrades called');
     const loadingElement = document.getElementById('loading-trades');
     const tradesContainer = document.getElementById('trades-container');
 
@@ -579,47 +455,29 @@ async function updateTrades() {
     tradesContainer.classList.add('hidden');
 
     try {
-        // Get selected parameters
-        const selectedHubs = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
-            .map(cb => cb.value);
-        const minMargin = document.getElementById('min-margin').value;
-        const maxMargin = document.getElementById('max-margin').value;
-        const minVolume = document.getElementById('min-volume').value;
-        const maxVolume = document.getElementById('max-volume').value;
-        const minPrice = document.getElementById('min-price').value;
-        const maxPrice = document.getElementById('max-price').value;
-        const minProfit = document.getElementById('min-profit').value;
-        const maxProfit = document.getElementById('max-profit').value;
+        console.log('Fetching trades from API...');
+        const response = await fetch(`/api/trades`);
+        console.log('Response status:', response.status, response.statusText);
 
-        // Build query parameters
-        const params = new URLSearchParams();
-        selectedHubs.forEach(hub => params.append('hubs', hub));
-        params.append('min_margin', minMargin);
-        params.append('max_margin', maxMargin);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-        if (minVolume) params.append('min_volume', minVolume);
-        if (maxVolume) params.append('max_volume', maxVolume);
-        if (minPrice) params.append('min_price', minPrice);
-        if (maxPrice) params.append('max_price', maxPrice);
-        if (minProfit) params.append('min_profit', minProfit);
-        if (maxProfit) params.append('max_profit', maxProfit);
-
-        const response = await fetch(`/api/trades?${params}`);
         const data = await response.json();
+        console.log('API response:', data.success, 'Count:', data.count);
 
         if (data.success) {
-            tradesData = data.opportunities; // Store data for sorting
+            tradesData = data.opportunities; // Store data
+            console.log('Calling displayTradingOpportunities with', data.opportunities.length, 'items');
             displayTradingOpportunities(data.opportunities);
-            document.getElementById('opportunity-count').textContent = data.count;
-            updateSortIcons(); // Update sort indicators
         } else {
             console.error('Trading API error:', data.error);
             displayError('Failed to load trading opportunities: ' + data.error);
         }
 
     } catch (error) {
-        console.error('Error updating trades:', error);
-        displayError('Network error loading trading opportunities');
+        console.error('Error updating trades:', error, error.stack);
+        displayError('Network error loading trading opportunities: ' + error.message);
     } finally {
         // Hide loading state
         loadingElement.classList.add('hidden');
@@ -628,68 +486,326 @@ async function updateTrades() {
 }
 
 /**
- * Display trading opportunities in table
+ * Display trading opportunities in DataTables
  */
 function displayTradingOpportunities(opportunities) {
-    const tbody = document.getElementById('trades-tbody');
-    tbody.innerHTML = '';
+    console.log('displayTradingOpportunities called with', opportunities.length, 'opportunities');
 
-    if (opportunities.length === 0) {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td colspan="6" class="px-6 py-4 text-center text-gray-500">
-                No trading opportunities found with current filters
-            </td>
-        `;
-        tbody.appendChild(row);
-        return;
+    // Destroy existing DataTable if it exists
+    if (tradesTable) {
+        console.log('Destroying existing DataTable');
+        tradesTable.destroy();
+        tradesTable = null;
     }
 
-    opportunities.forEach(trade => {
-        const row = document.createElement('tr');
-        row.className = 'hover:bg-gray-50 cursor-pointer trade-hub-card';
+    // Clear the table body
+    $('#trades-tbody').empty();
 
-        // Dynamic margin colors that work with dark mode
+    // Prepare data for DataTables
+    const tableData = opportunities.map(trade => {
         const marginClass = trade.delta_percentage >= 50 ? 'margin-high' :
                            trade.delta_percentage >= 30 ? 'margin-medium' : 'margin-low';
 
-        row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm font-medium text-gray-900">${trade.typename}</div>
-                <div class="text-sm text-gray-500">ID: ${trade.typeid}</div>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="text-lg font-bold ${marginClass}">${trade.delta_percentage.toFixed(1)}%</span>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="text-lg font-bold text-green-600 isk-format">${formatISK(trade.delta)}</span>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center">
-                    <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
-                        ${trade.min_tradehub}
-                    </span>
-                    <i class="fas fa-arrow-right mx-2 text-gray-400"></i>
-                    <span class="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
-                        ${trade.max_tradehub}
-                    </span>
-                </div>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <div>Buy: ${trade.min_vol_yesterday.toLocaleString()}</div>
-                <div>Sell: ${trade.max_vol_yesterday.toLocaleString()}</div>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <div class="isk-format">Buy: ${formatISK(trade.min_price)}</div>
-                <div class="isk-format">Sell: ${formatISK(trade.max_price)}</div>
-            </td>
-        `;
-
-        // Add click handler for trade details
-        row.addEventListener('click', () => showTradeDetails(trade));
-
-        tbody.appendChild(row);
+        return [
+            `<div style="color: var(--text-primary);">${trade.typename}</div><div style="color: var(--text-muted); font-size: 0.75rem;">ID: ${trade.typeid}</div>`,
+            `<span class="${marginClass}">${trade.delta_percentage.toFixed(1)}%</span>`,
+            `<span style="color: var(--accent-green);" class="isk-format">${formatISK(trade.delta)}</span>`,
+            `<span style="color: var(--accent-blue);">${trade.min_tradehub}</span> → <span style="color: var(--accent-green);">${trade.max_tradehub}</span>`,
+            trade.min_vol_yesterday.toLocaleString(),
+            trade.max_vol_yesterday.toLocaleString(),
+            formatISK(trade.min_price),
+            formatISK(trade.max_price)
+        ];
     });
+
+    console.log('Prepared', tableData.length, 'rows for DataTable');
+
+    // Initialize DataTable
+    try {
+        console.log('Initializing DataTable...');
+
+        // Check if jQuery and DataTables are loaded
+        if (typeof $ === 'undefined') {
+            console.error('jQuery not loaded!');
+            displayError('jQuery library not loaded');
+            return;
+        }
+
+        if (typeof $.fn.DataTable === 'undefined') {
+            console.error('DataTables not loaded!');
+            displayError('DataTables library not loaded');
+            return;
+        }
+
+        console.log('jQuery and DataTables are loaded');
+        tradesTable = $('#trades-table').DataTable({
+            data: tableData,
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+            order: [[1, 'desc']], // Sort by margin % descending
+            dom: 'lrtip', // Remove default search box (we have custom one)
+            compact: true,
+            initComplete: function () {
+                console.log('DataTable initialized successfully');
+            // Add text search to all columns in the second header row
+            this.api().columns().every(function (index) {
+                let column = this;
+                let title = $(column.header()).text();
+
+                // Get the second header row cell
+                let cell = $('#column-filters th').eq(index);
+
+                // Create text input for all columns
+                let input = $('<input type="text" placeholder="Search..." style="font-size: 0.75rem; width: 100%;" />')
+                    .appendTo(cell.empty())
+                    .on('keyup change click', function (e) {
+                        e.stopPropagation(); // Prevent sorting when clicking in input
+
+                        // For Margin % column (index 1), use exact match
+                        if (index === 1 && this.value) {
+                            // Search for exact value: "^20\.0%$" matches only "20.0%"
+                            let searchValue = this.value.trim();
+                            // Match exactly this number with optional decimal
+                            let regex = '^' + searchValue.replace('.', '\\.') + '(\\.0)?%$';
+                            column.search(regex, true, false).draw();
+                        } else {
+                            // For other columns, use normal search
+                            if (column.search() !== this.value) {
+                                column.search(this.value, false, false).draw();
+                            }
+                        }
+                    });
+            });
+            }
+        });
+
+        console.log('DataTable created successfully');
+
+        // Connect global search to DataTable
+        $('#global-search').on('keyup', function () {
+            tradesTable.search(this.value).draw();
+        });
+
+        // Setup custom search function for soft filters and hub routes
+        $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+            // Only apply to trades table
+            if (settings.nTable.id !== 'trades-table') {
+                return true;
+            }
+
+            // Get soft filter values
+            const minMargin = parseFloat($('#soft-min-margin').val());
+            const maxMargin = parseFloat($('#soft-max-margin').val());
+            const minVolume = parseFloat($('#soft-min-volume').val());
+            const minPrice = parseFloat($('#soft-min-price').val());
+
+            // Get hub filters
+            const buyHubs = Array.from(document.querySelectorAll('.buy-hub:checked')).map(cb => cb.value);
+            const sellHubs = Array.from(document.querySelectorAll('.sell-hub:checked')).map(cb => cb.value);
+
+            // Parse the table data (strip HTML)
+            const marginHtml = data[1]; // Margin % column
+            const marginText = $('<div>').html(marginHtml).text().trim();
+            const margin = parseFloat(marginText.replace('%', '').trim());
+
+            const routeHtml = data[3]; // Route column
+            const routeText = $('<div>').html(routeHtml).text().trim();
+            // Extract hub names from "BuyHub → SellHub" format
+            const routeParts = routeText.split('→').map(s => s.trim());
+            const rowBuyHub = routeParts[0];
+            const rowSellHub = routeParts[1];
+
+            const buyVolHtml = data[4]; // Buy Vol
+            const buyVolText = $('<div>').html(buyVolHtml).text().trim();
+            const buyVol = parseFloat(buyVolText.replace(/,/g, ''));
+
+            const sellVolHtml = data[5]; // Sell Vol
+            const sellVolText = $('<div>').html(sellVolHtml).text().trim();
+            const sellVol = parseFloat(sellVolText.replace(/,/g, ''));
+
+            const buyPriceHtml = data[6]; // Buy Price
+            const buyPriceText = $('<div>').html(buyPriceHtml).text().trim();
+            const buyPrice = parseFloat(buyPriceText.replace(/[^0-9.]/g, ''));
+
+            // Apply hub route filter
+            if (buyHubs.length > 0 && !buyHubs.includes(rowBuyHub)) return false;
+            if (sellHubs.length > 0 && !sellHubs.includes(rowSellHub)) return false;
+
+            // Apply soft filters
+            if (!isNaN(minMargin) && margin < minMargin) return false;
+            if (!isNaN(maxMargin) && margin > maxMargin) return false;
+            if (!isNaN(minVolume) && (buyVol < minVolume || sellVol < minVolume)) return false;
+            if (!isNaN(minPrice) && buyPrice < minPrice) return false;
+
+            return true;
+        });
+
+        // Add event listeners to soft filters
+        $('#soft-min-margin, #soft-max-margin, #soft-min-volume, #soft-min-price').on('keyup change', function () {
+            console.log('Soft filter changed, redrawing table');
+            tradesTable.draw();
+        });
+
+    } catch (error) {
+        console.error('Error initializing DataTable:', error);
+        displayError('Failed to initialize table: ' + error.message);
+    }
+}
+
+/**
+ * Load and display trade hubs for route selection
+ */
+async function loadTradeHubs() {
+    const tradeHubs = ['Jita', 'Amarr', 'Dodixie', 'Rens', 'Hek'];
+
+    const buyHubsContainer = document.getElementById('buy-hubs');
+    const sellHubsContainer = document.getElementById('sell-hubs');
+
+    tradeHubs.forEach((hub, index) => {
+        // Create buy hub checkbox
+        const buyLabel = document.createElement('label');
+        buyLabel.className = 'hub-checkbox-label';
+        buyLabel.innerHTML = `
+            <input type="checkbox" class="hub-checkbox buy-hub" value="${hub}" onchange="updateRouteConnections()">
+            <span>${hub}</span>
+        `;
+        buyHubsContainer.appendChild(buyLabel);
+
+        // Create sell hub checkbox
+        const sellLabel = document.createElement('label');
+        sellLabel.className = 'hub-checkbox-label';
+        sellLabel.innerHTML = `
+            <input type="checkbox" class="hub-checkbox sell-hub" value="${hub}" onchange="updateRouteConnections()">
+            <span>${hub}</span>
+        `;
+        sellHubsContainer.appendChild(sellLabel);
+    });
+}
+
+/**
+ * Update animated route connections
+ */
+function updateRouteConnections() {
+    const svg = document.getElementById('route-svg');
+    svg.innerHTML = svg.querySelector('defs').outerHTML; // Keep gradient def
+
+    const buyHubs = Array.from(document.querySelectorAll('.buy-hub:checked'));
+    const sellHubs = Array.from(document.querySelectorAll('.sell-hub:checked'));
+
+    // Update label styling
+    document.querySelectorAll('.hub-checkbox').forEach(checkbox => {
+        const label = checkbox.parentElement;
+        if (checkbox.checked) {
+            label.classList.add('selected');
+        } else {
+            label.classList.remove('selected');
+        }
+    });
+
+    // Draw connections with proper alignment
+    buyHubs.forEach((buyHub, buyIndex) => {
+        const buyLabel = buyHub.parentElement;
+        const buyRect = buyLabel.getBoundingClientRect();
+        const svgRect = svg.getBoundingClientRect();
+        const svgContainer = svg.parentElement.getBoundingClientRect();
+
+        sellHubs.forEach((sellHub, sellIndex) => {
+            const sellLabel = sellHub.parentElement;
+            const sellRect = sellLabel.getBoundingClientRect();
+
+            // Calculate connection points relative to SVG container, not viewport
+            const x1 = buyRect.right - svgContainer.left;
+            const y1 = (buyRect.top + buyRect.bottom) / 2 - svgContainer.top;
+            const x2 = sellRect.left - svgContainer.left;
+            const y2 = (sellRect.top + sellRect.bottom) / 2 - svgContainer.top;
+
+            // Create organic curved path with multiple control points
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const midX = x1 + dx * 0.5;
+            const midY = y1 + dy * 0.5;
+
+            // Add some wave/curve variation
+            const curve1X = x1 + dx * 0.25;
+            const curve1Y = y1 + dy * 0.25 + (Math.sin(buyIndex + sellIndex) * 20);
+            const curve2X = x1 + dx * 0.75;
+            const curve2Y = y1 + dy * 0.75 - (Math.cos(buyIndex + sellIndex) * 20);
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            // Use cubic bezier for more organic curves
+            path.setAttribute('d', `M ${x1} ${y1} C ${curve1X} ${curve1Y}, ${curve2X} ${curve2Y}, ${x2} ${y2}`);
+            path.classList.add('active');
+            path.style.animationDelay = `${(buyIndex + sellIndex) * 0.15}s`;
+
+            svg.appendChild(path);
+
+            // Add hauler ships traveling along the path
+            const numHaulers = 2;
+            for (let i = 0; i < numHaulers; i++) {
+                const foreignObject = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+                foreignObject.setAttribute('width', '60');
+                foreignObject.setAttribute('height', '60');
+                foreignObject.setAttribute('x', '-30');
+                foreignObject.setAttribute('y', '-30');
+
+                const haulerDiv = document.createElement('div');
+                haulerDiv.className = 'hauler-ship';
+                haulerDiv.innerHTML = `
+                    <img src="https://images.evetech.net/types/648/render?size=128" alt="Badger" />
+                `;
+
+                foreignObject.appendChild(haulerDiv);
+
+                // Animate hauler along path with rotation - start after line animation (2.5s)
+                const animateMotion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+                animateMotion.setAttribute('dur', '5s');
+                animateMotion.setAttribute('repeatCount', 'indefinite');
+                animateMotion.setAttribute('begin', `${2.5 + (buyIndex + sellIndex) * 0.15 + i * 2.5}s`);
+                animateMotion.setAttribute('rotate', 'auto'); // Auto-rotate to follow path direction
+                animateMotion.setAttribute('path', path.getAttribute('d'));
+
+                // Hide ship initially, show after line animation completes
+                foreignObject.style.opacity = '0';
+                setTimeout(() => {
+                    foreignObject.style.opacity = '1';
+                    foreignObject.style.transition = 'opacity 0.5s ease-in';
+                }, 2500 + (buyIndex + sellIndex) * 150);
+
+                foreignObject.appendChild(animateMotion);
+
+                // Set path ID
+                path.setAttribute('id', `path-${buyIndex}-${sellIndex}`);
+
+                svg.appendChild(foreignObject);
+            }
+        });
+    });
+
+    // Apply hub filter to table
+    applyHubFilter();
+}
+
+/**
+ * Apply hub filter to DataTable
+ */
+function applyHubFilter() {
+    if (!tradesTable) return;
+
+    const buyHubs = Array.from(document.querySelectorAll('.buy-hub:checked')).map(cb => cb.value);
+    const sellHubs = Array.from(document.querySelectorAll('.sell-hub:checked')).map(cb => cb.value);
+
+    console.log('Hub filter:', { buyHubs, sellHubs });
+    tradesTable.draw();
+}
+
+/**
+ * Clear all hub selections
+ */
+function clearHubSelection() {
+    document.querySelectorAll('.hub-checkbox').forEach(cb => {
+        cb.checked = false;
+    });
+    updateRouteConnections();
 }
 
 /**
@@ -699,7 +815,7 @@ function displayError(message) {
     const tbody = document.getElementById('trades-tbody');
     tbody.innerHTML = `
         <tr>
-            <td colspan="6" class="px-6 py-4 text-center text-red-500">
+            <td colspan="8" class="px-6 py-4 text-center" style="color: var(--accent-red);">
                 <i class="fas fa-exclamation-triangle mr-2"></i>${message}
             </td>
         </tr>
@@ -816,79 +932,6 @@ function formatISK(amount) {
     return formatted + ' ISK';
 }
 
-/**
- * Toggle advanced filters visibility
- */
-function toggleAdvancedFilters() {
-    const content = document.getElementById('advanced-filters-content');
-    const icon = document.getElementById('advanced-filters-icon');
-
-    if (content.classList.contains('collapsed')) {
-        // Expand
-        content.classList.remove('collapsed');
-        icon.classList.add('rotated');
-
-        // Save state to localStorage
-        localStorage.setItem('advancedFiltersExpanded', 'true');
-
-        // Show notification
-        showNotification('Advanced filters expanded', 'info');
-    } else {
-        // Collapse
-        content.classList.add('collapsed');
-        icon.classList.remove('rotated');
-
-        // Save state to localStorage
-        localStorage.setItem('advancedFiltersExpanded', 'false');
-
-        // Show notification
-        showNotification('Advanced filters collapsed', 'info');
-    }
-}
-
-/**
- * Initialize advanced filters state from localStorage
- */
-function initializeAdvancedFilters() {
-    const content = document.getElementById('advanced-filters-content');
-    const icon = document.getElementById('advanced-filters-icon');
-    const isExpanded = localStorage.getItem('advancedFiltersExpanded') === 'true';
-
-    if (isExpanded) {
-        content.classList.remove('collapsed');
-        icon.classList.add('rotated');
-    } else {
-        content.classList.add('collapsed');
-        icon.classList.remove('rotated');
-    }
-}
-
-/**
- * Clear all filters to default values
- */
-function clearFilters() {
-    // Reset filter inputs to default values
-    document.getElementById('min-margin').value = 20;
-    document.getElementById('max-margin').value = 1500;
-    document.getElementById('min-volume').value = 75;
-    document.getElementById('max-volume').value = '';
-    document.getElementById('min-price').value = 100000;
-    document.getElementById('max-price').value = '';
-    document.getElementById('min-profit').value = '';
-    document.getElementById('max-profit').value = '';
-
-    // Check all trade hub checkboxes
-    const hubCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-    hubCheckboxes.forEach(checkbox => {
-        checkbox.checked = true;
-    });
-
-    // Show notification
-    showNotification('Filters cleared to defaults', 'info');
-
-    // Automatically update trades with cleared filters
-    updateTrades();
-}
 
 /**
  * Switch between tabs
@@ -1235,7 +1278,14 @@ function displayWarehouseItems() {
 
         let ordersHtml = '';
 
-        if (buyOrders.length > 0 || sellOrders.length > 0) {
+        // Check if there's an error in the orders data
+        if (activeOrders.error) {
+            // Show error message
+            ordersHtml = `
+                <div class="text-sm font-medium" style="color: var(--accent-red);">⚠️ Error</div>
+                <div class="text-xs" style="color: var(--text-muted);">Failed to load</div>
+            `;
+        } else if (buyOrders.length > 0 || sellOrders.length > 0) {
             const orderDetails = [];
 
             // Process buy orders
@@ -1299,11 +1349,11 @@ function displayWarehouseItems() {
                 </div>
             `;
         } else {
-            // Only show "No orders" for items with significant quantity
+            // No orders found - check if item has significant quantity
             if (item.quantity > 10) {
                 ordersHtml = `
                     <div class="text-sm font-medium" style="color: var(--text-muted);">—</div>
-                    <div class="text-xs" style="color: var(--text-muted);">No active orders</div>
+                    <div class="text-xs" style="color: var(--text-muted);">Sold Out</div>
                 `;
             } else {
                 ordersHtml = `
