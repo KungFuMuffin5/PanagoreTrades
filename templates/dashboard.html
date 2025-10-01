@@ -725,6 +725,9 @@
             <button onclick="switchTab('warehouse')" class="tab-button px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200" id="warehouse-tab">
                 <i class="fas fa-warehouse mr-2"></i>Warehouse Management
             </button>
+            <button onclick="switchTab('analysis')" class="tab-button px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200" id="analysis-tab">
+                <i class="fas fa-chart-pie mr-2"></i>Trade Analysis
+            </button>
         </div>
     </nav>
 
@@ -1155,6 +1158,76 @@
                     <i class="fas fa-inbox text-4xl mb-4" style="color: var(--text-muted);"></i>
                     <p class="text-lg font-medium mb-2" style="color: var(--text-primary);">No Market Orders</p>
                     <p style="color: var(--text-muted);">No active or completed market orders found.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trade Analysis Tab Content -->
+        <div id="analysis-content" class="tab-content hidden">
+            <div class="zk-card">
+                <div class="p-4" style="border-bottom: 1px solid var(--border-color);">
+                    <h2 class="text-lg font-bold orbitron" style="color: var(--text-primary);">
+                        <i class="fas fa-chart-pie mr-2" style="color: var(--accent-blue);"></i>Financial Analytics
+                    </h2>
+                </div>
+
+                <!-- Analytics Grid -->
+                <div class="p-6 space-y-6">
+                    <!-- Top Row: Money Flow Overview -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Income Sources Pie Chart -->
+                        <div class="p-4" style="background-color: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                            <h3 class="text-md font-bold mb-4" style="color: var(--text-primary);">
+                                <i class="fas fa-coins mr-2" style="color: var(--accent-green);"></i>Income Sources
+                            </h3>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="incomeSourcesChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Expense Breakdown Pie Chart -->
+                        <div class="p-4" style="background-color: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                            <h3 class="text-md font-bold mb-4" style="color: var(--text-primary);">
+                                <i class="fas fa-receipt mr-2" style="color: var(--accent-red);"></i>Expense Breakdown
+                            </h3>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="expenseBreakdownChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Middle Row: Cash Flow Over Time -->
+                    <div class="p-4" style="background-color: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <h3 class="text-md font-bold mb-4" style="color: var(--text-primary);">
+                            <i class="fas fa-chart-line mr-2" style="color: var(--accent-blue);"></i>Cash Flow (30 Days)
+                        </h3>
+                        <div style="height: 300px; position: relative;">
+                            <canvas id="cashFlowChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Row: Profit Margin & Trading Volume -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Profit Margin Trends -->
+                        <div class="p-4" style="background-color: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                            <h3 class="text-md font-bold mb-4" style="color: var(--text-primary);">
+                                <i class="fas fa-percentage mr-2" style="color: var(--accent-orange);"></i>Profit Margin Trends
+                            </h3>
+                            <div style="height: 250px; position: relative;">
+                                <canvas id="profitMarginChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Trading Volume by Hub -->
+                        <div class="p-4" style="background-color: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                            <h3 class="text-md font-bold mb-4" style="color: var(--text-primary);">
+                                <i class="fas fa-map-marker-alt mr-2" style="color: var(--accent-purple);"></i>Trading Volume by Hub
+                            </h3>
+                            <div style="height: 250px; position: relative;">
+                                <canvas id="hubVolumeChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

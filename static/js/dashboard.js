@@ -955,6 +955,8 @@ function switchTab(tabName) {
     if (tabName === 'warehouse') {
         loadWarehouseData();
         loadMarketOrders();
+    } else if (tabName === 'analysis') {
+        loadTradeAnalytics();
     }
 
     // Save tab preference
@@ -1646,6 +1648,7 @@ function displayMarketOrders() {
             allOrders.push({
                 ...order,
                 type_id: orderGroup.type_id,
+                type_name: orderGroup.type_name,
                 location_id: orderGroup.location_id,
                 status: 'active'
             });
@@ -1674,7 +1677,7 @@ function displayMarketOrders() {
         row.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium" style="color: var(--text-primary);">
-                    ${getItemName(order.type_id) || `Item ${order.type_id}`}
+                    ${order.type_name || `Item ${order.type_id}`}
                 </div>
                 <div class="text-sm" style="color: var(--text-muted);">ID: ${order.type_id}</div>
             </td>
@@ -1847,3 +1850,310 @@ window.addEventListener('beforeunload', function() {
         clearInterval(countdownInterval);
     }
 });
+
+/**
+ * Trade Analytics Functions
+ */
+let analyticsCharts = {};
+
+async function loadTradeAnalytics() {
+    try {
+        const response = await fetch('/api/analytics');
+        const data = await response.json();
+
+        if (data.success) {
+            createIncomeSourcesChart(data.income_sources);
+            createExpenseBreakdownChart(data.expenses);
+            createCashFlowChart(data.cash_flow);
+            createProfitMarginChart(data.profit_margins);
+            createHubVolumeChart(data.hub_volumes);
+        }
+    } catch (error) {
+        console.error('Error loading trade analytics:', error);
+    }
+}
+
+function createIncomeSourcesChart(data) {
+    const ctx = document.getElementById('incomeSourcesChart');
+
+    // Destroy existing chart if it exists
+    if (analyticsCharts.incomeSources) {
+        analyticsCharts.incomeSources.destroy();
+    }
+
+    analyticsCharts.incomeSources = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                data: data.values,
+                backgroundColor: [
+                    'rgba(16, 185, 129, 0.8)',  // Green
+                    'rgba(59, 130, 246, 0.8)',  // Blue
+                    'rgba(251, 146, 60, 0.8)',  // Orange
+                    'rgba(168, 85, 247, 0.8)',  // Purple
+                    'rgba(236, 72, 153, 0.8)'   // Pink
+                ],
+                borderColor: 'rgba(30, 41, 59, 1)',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: '#e2e8f0',
+                        font: { size: 12 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + formatISK(context.parsed);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createExpenseBreakdownChart(data) {
+    const ctx = document.getElementById('expenseBreakdownChart');
+
+    if (analyticsCharts.expenses) {
+        analyticsCharts.expenses.destroy();
+    }
+
+    analyticsCharts.expenses = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                data: data.values,
+                backgroundColor: [
+                    'rgba(239, 68, 68, 0.8)',   // Red
+                    'rgba(251, 146, 60, 0.8)',  // Orange
+                    'rgba(234, 179, 8, 0.8)',   // Yellow
+                    'rgba(20, 184, 166, 0.8)',  // Teal
+                    'rgba(99, 102, 241, 0.8)'   // Indigo
+                ],
+                borderColor: 'rgba(30, 41, 59, 1)',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: '#e2e8f0',
+                        font: { size: 12 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + formatISK(context.parsed);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createCashFlowChart(data) {
+    const ctx = document.getElementById('cashFlowChart');
+
+    if (analyticsCharts.cashFlow) {
+        analyticsCharts.cashFlow.destroy();
+    }
+
+    analyticsCharts.cashFlow = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.dates,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: data.income,
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                },
+                {
+                    label: 'Expenses',
+                    data: data.expenses,
+                    borderColor: 'rgba(239, 68, 68, 1)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                },
+                {
+                    label: 'Net Profit',
+                    data: data.net,
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: function(value) {
+                            return formatISK(value);
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                x: {
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#e2e8f0',
+                        font: { size: 12 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + formatISK(context.parsed.y);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createProfitMarginChart(data) {
+    const ctx = document.getElementById('profitMarginChart');
+
+    if (analyticsCharts.profitMargin) {
+        analyticsCharts.profitMargin.destroy();
+    }
+
+    analyticsCharts.profitMargin = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.dates,
+            datasets: [{
+                label: 'Profit Margin %',
+                data: data.margins,
+                backgroundColor: 'rgba(251, 146, 60, 0.8)',
+                borderColor: 'rgba(251, 146, 60, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                x: {
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#e2e8f0',
+                        font: { size: 12 }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createHubVolumeChart(data) {
+    const ctx = document.getElementById('hubVolumeChart');
+
+    if (analyticsCharts.hubVolume) {
+        analyticsCharts.hubVolume.destroy();
+    }
+
+    analyticsCharts.hubVolume = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.hubs,
+            datasets: [{
+                label: 'Trading Volume (ISK)',
+                data: data.volumes,
+                backgroundColor: 'rgba(168, 85, 247, 0.8)',
+                borderColor: 'rgba(168, 85, 247, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: function(value) {
+                            return formatISK(value);
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                y: {
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#e2e8f0',
+                        font: { size: 12 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Volume: ' + formatISK(context.parsed.x);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}

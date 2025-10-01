@@ -296,7 +296,7 @@ def get_trades():
 @app.route('/api/profit-history')
 def get_profit_history():
     """Get profit history for the last 7 days"""
-    global esi_client
+    global esi_client, warehouse_manager
 
     try:
         if esi_client is None:
@@ -314,6 +314,8 @@ def get_profit_history():
                 total_profit = total_profit_data['total_realized_profit']
                 total_trades = total_profit_data['transactions_analyzed']
 
+                print(f"DEBUG: Warehouse manager returned profit={total_profit}, trades={total_trades}")
+
                 # Create 7 days with zero profit, except put all profit on today
                 days = []
                 base_date = datetime.now() - timedelta(days=6)
@@ -326,26 +328,18 @@ def get_profit_history():
                         'trades': total_trades if is_today else 0   # All trades on today
                     })
 
+                print(f"DEBUG: Returning days with total_profit={total_profit}")
+
             except Exception as e:
                 print(f"Error getting ESI profit history: {e}")
+                import traceback
+                traceback.print_exc()
                 # Fallback to zero data
                 days = _create_zero_profit_days()
         else:
+            print("DEBUG: ESI client not authenticated, using zero data")
             # Use zero data if not authenticated
             days = _create_zero_profit_days()
-
-        if not days:
-            # Fallback mock data
-            days = []
-            base_date = datetime.now() - timedelta(days=7)
-            for i in range(7):
-                day = base_date + timedelta(days=i)
-                profit = 1200000 + (i * 150000) + (i % 3 * 200000)
-                days.append({
-                    'date': day.strftime('%Y-%m-%d'),
-                    'profit': profit,
-                    'trades': 15 + i * 2
-                })
 
         total_profit = sum(day['profit'] for day in days)
 
@@ -357,6 +351,9 @@ def get_profit_history():
         })
 
     except Exception as e:
+        print(f"ERROR in profit-history endpoint: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e),
@@ -436,6 +433,8 @@ def get_warehouse_data():
 
     except Exception as e:
         print(f"Error getting warehouse data: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e),
@@ -444,7 +443,8 @@ def get_warehouse_data():
                 'summary': {
                     'total_value_all_hubs': 0,
                     'total_items_all_hubs': 0,
-                    'hubs_analyzed': 0
+                    'hubs_analyzed': 0,
+                    'total_actual_profit': 0
                 }
             }
         })
@@ -613,6 +613,23 @@ def get_corporation_orders():
         else:
             print("No orders found - DataFrame is empty")
 
+        # Get unique type IDs to fetch names
+        unique_type_ids = orders_df['type_id'].unique()
+        type_names = {}
+
+        # Fetch item names from ESI
+        for type_id in unique_type_ids:
+            try:
+                type_id_int = int(type_id)
+                response = requests.get(f'https://esi.evetech.net/latest/universe/types/{type_id_int}/')
+                if response.status_code == 200:
+                    type_names[type_id_int] = response.json().get('name', f'Item {type_id_int}')
+                else:
+                    type_names[type_id_int] = f'Item {type_id_int}'
+            except Exception as e:
+                print(f"Error fetching name for type_id {type_id}: {e}")
+                type_names[type_id_int] = f'Item {type_id_int}'
+
         for _, order in orders_df.iterrows():
             type_id = int(order['type_id'])
             location_id = int(order['location_id'])
@@ -621,6 +638,7 @@ def get_corporation_orders():
             if key not in orders_by_item:
                 orders_by_item[key] = {
                     'type_id': type_id,
+                    'type_name': type_names.get(type_id, f'Item {type_id}'),
                     'location_id': location_id,
                     'buy_orders': [],
                     'sell_orders': []
@@ -692,7 +710,413 @@ def get_corporation_orders():
             }
         })
 
+@app.route('/api/analytics')
+def get_trade_analytics():
+    """Get trade analytics data from real corporation transactions"""
+    global esi_client, warehouse_manager
+
+    print("\n" + "=" * 80)
+    print("ANALYTICS ENDPOINT CALLED")
+    print("=" * 80)
+
+    try:
+        from ESI_LocalHost_Access import get_corporation_transactions, get_corporation_journal
+        import pandas as pd
+
+        # Initialize if needed
+        if esi_client is None:
+            print("Initializing ESI client for analytics...")
+            esi_client = ESIClient()
+            print(f"ESI Client initialized")
+
+        # Check if authenticated
+        auth_status = esi_client.is_authenticated()
+        print(f"ESI Client authenticated: {auth_status}")
+        print(f"Corporation ID: {esi_client.corporation_id}")
+        print(f"Character Name: {esi_client.character_name}")
+
+        if not auth_status:
+            print("ESI client not authenticated, returning empty analytics")
+            return _get_mock_analytics_data()
+
+        print(f"Fetching corporation transactions for corp_id: {esi_client.corporation_id}")
+
+        # Get all available transactions (ESI returns last 30 days automatically)
+        transactions_df = get_corporation_transactions(esi_client, division=1)
+        print(f"Retrieved {len(transactions_df)} transactions")
+
+        # Get multiple pages of journal data for comprehensive fee/income tracking
+        journal_dfs = []
+        max_pages = 5  # Get up to 5 pages of journal entries (covers ~5000 entries)
+
+        for page in range(1, max_pages + 1):
+            try:
+                page_df = get_corporation_journal(esi_client, division=1, page=page)
+                if page_df.empty:
+                    break  # No more pages
+                journal_dfs.append(page_df)
+                print(f"Retrieved {len(page_df)} journal entries from page {page}")
+            except Exception as e:
+                print(f"Error fetching journal page {page}: {e}")
+                break
+
+        # Combine all journal pages
+        if journal_dfs:
+            journal_df = pd.concat(journal_dfs, ignore_index=True)
+            print(f"Total journal entries: {len(journal_df)}")
+
+            # Filter journal to last 30 days
+            if 'date' in journal_df.columns:
+                journal_df['journal_date'] = pd.to_datetime(journal_df['date'])
+                # Make cutoff date timezone-aware to match journal dates
+                from datetime import timezone
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
+                journal_df = journal_df[journal_df['journal_date'] >= cutoff_date]
+                print(f"Journal entries in last 30 days: {len(journal_df)}")
+        else:
+            journal_df = pd.DataFrame()
+            print("No journal data retrieved")
+
+        # If no transaction data, return empty analytics (not mock)
+        if transactions_df.empty:
+            print("No transaction data found, returning empty analytics")
+            return _get_mock_analytics_data()
+
+        # Filter transactions to last 30 days if date column exists
+        if 'date' in transactions_df.columns:
+            transactions_df['transaction_date'] = pd.to_datetime(transactions_df['date'])
+            # Make cutoff date timezone-aware to match transaction dates
+            from datetime import timezone
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
+            original_count = len(transactions_df)
+            transactions_df = transactions_df[transactions_df['transaction_date'] >= cutoff_date]
+            print(f"Filtered transactions from {original_count} to {len(transactions_df)} (last 30 days)")
+
+        if transactions_df.empty:
+            print("No transactions in last 30 days, returning empty analytics")
+            return _get_mock_analytics_data()
+
+        print(f"Calculating analytics with {len(transactions_df)} transactions...")
+
+        # Calculate Income Sources
+        income_sources = _calculate_income_sources(transactions_df, journal_df)
+        print(f"Income sources: {income_sources}")
+
+        # Calculate Expense Breakdown
+        expenses = _calculate_expenses(transactions_df, journal_df)
+
+        # Calculate Cash Flow Over Time (30 days)
+        cash_flow = _calculate_cash_flow(transactions_df, journal_df)
+
+        # Calculate Profit Margin Trends (7 days)
+        profit_margins = _calculate_profit_margins(transactions_df)
+
+        # Calculate Trading Volume by Hub
+        hub_volumes = _calculate_hub_volumes(transactions_df)
+
+        return jsonify({
+            'success': True,
+            'income_sources': income_sources,
+            'expenses': expenses,
+            'cash_flow': cash_flow,
+            'profit_margins': profit_margins,
+            'hub_volumes': hub_volumes,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        print(f"Error getting analytics data: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return mock data on error
+        return _get_mock_analytics_data()
+
+def _get_mock_analytics_data():
+    """Return empty analytics data when no real data is available"""
+    dates = [(datetime.now() - timedelta(days=i)).strftime('%m/%d') for i in range(29, -1, -1)]
+    profit_dates = [(datetime.now() - timedelta(days=i)).strftime('%m/%d') for i in range(6, -1, -1)]
+
+    return jsonify({
+        'success': True,
+        'income_sources': {
+            'labels': ['No Data Available'],
+            'values': [0]
+        },
+        'expenses': {
+            'labels': ['No Data Available'],
+            'values': [0]
+        },
+        'cash_flow': {
+            'dates': dates,
+            'income': [0] * 30,
+            'expenses': [0] * 30,
+            'net': [0] * 30
+        },
+        'profit_margins': {
+            'dates': profit_dates,
+            'margins': [0] * 7
+        },
+        'hub_volumes': {
+            'hubs': ['Jita', 'Amarr', 'Dodixie', 'Rens', 'Hek'],
+            'volumes': [0, 0, 0, 0, 0]
+        },
+        'timestamp': datetime.now().isoformat()
+    })
+
+def _calculate_income_sources(transactions_df, journal_df):
+    """Calculate income breakdown from transactions"""
+    import pandas as pd
+
+    # Get sell transactions (income)
+    sell_transactions = transactions_df[transactions_df['is_buy'] == False].copy()
+
+    labels = []
+    values = []
+
+    # Market sales revenue
+    if not sell_transactions.empty:
+        total_sales = (sell_transactions['unit_price'] * sell_transactions['quantity']).sum()
+        if total_sales > 0:
+            labels.append('Market Sales')
+            values.append(total_sales)
+
+    # Add various income types from journal if available
+    if not journal_df.empty and 'ref_type' in journal_df.columns and 'amount' in journal_df.columns:
+        # Contract rewards
+        contract_income = journal_df[
+            (journal_df['ref_type'] == 'contract_reward') &
+            (journal_df['amount'] > 0)
+        ]['amount'].sum()
+        if contract_income > 0:
+            labels.append('Contract Rewards')
+            values.append(contract_income)
+
+        # Bounty prizes (if doing PvE)
+        bounty_income = journal_df[
+            (journal_df['ref_type'] == 'bounty_prizes') &
+            (journal_df['amount'] > 0)
+        ]['amount'].sum()
+        if bounty_income > 0:
+            labels.append('Bounties')
+            values.append(bounty_income)
+
+        # Corporate dividends
+        dividend_income = journal_df[
+            (journal_df['ref_type'] == 'corporation_account_withdrawal') &
+            (journal_df['amount'] > 0)
+        ]['amount'].sum()
+        if dividend_income > 0:
+            labels.append('Corp Dividends')
+            values.append(dividend_income)
+
+    if not labels:
+        return {'labels': ['No Sales Data'], 'values': [0]}
+
+    return {'labels': labels, 'values': values}
+
+def _calculate_expenses(transactions_df, journal_df):
+    """Calculate expense breakdown from transactions and journal"""
+    import pandas as pd
+
+    # Get buy transactions (expenses)
+    buy_transactions = transactions_df[transactions_df['is_buy'] == True].copy()
+
+    labels = []
+    values = []
+
+    # Item purchases (cost of goods sold)
+    if not buy_transactions.empty:
+        total_purchases = (buy_transactions['unit_price'] * buy_transactions['quantity']).sum()
+        if total_purchases > 0:
+            labels.append('Item Purchases')
+            values.append(total_purchases)
+
+    # Extract fees and costs from journal
+    if not journal_df.empty and 'ref_type' in journal_df.columns and 'amount' in journal_df.columns:
+        # Broker fees (when placing orders)
+        broker_fees = abs(journal_df[journal_df['ref_type'] == 'brokers_fee']['amount'].sum())
+        if broker_fees > 0:
+            labels.append('Broker Fees')
+            values.append(broker_fees)
+
+        # Transaction/sales tax
+        transaction_tax = abs(journal_df[journal_df['ref_type'] == 'transaction_tax']['amount'].sum())
+        if transaction_tax > 0:
+            labels.append('Sales Tax')
+            values.append(transaction_tax)
+
+        # Contract costs (courier/hauling)
+        contract_costs = abs(journal_df[
+            (journal_df['ref_type'] == 'contract_price') &
+            (journal_df['amount'] < 0)
+        ]['amount'].sum())
+        if contract_costs > 0:
+            labels.append('Courier Contracts')
+            values.append(contract_costs)
+
+        # Office rental / citadel fees
+        office_fees = abs(journal_df[
+            (journal_df['ref_type'].isin(['office_rental_fee', 'structure_gate_jump'])) &
+            (journal_df['amount'] < 0)
+        ]['amount'].sum())
+        if office_fees > 0:
+            labels.append('Structure Fees')
+            values.append(office_fees)
+
+    if not labels:
+        return {'labels': ['No Purchase Data'], 'values': [0]}
+
+    return {'labels': labels, 'values': values}
+
+def _calculate_cash_flow(transactions_df, journal_df):
+    """Calculate daily cash flow over 30 days"""
+    import pandas as pd
+    from datetime import timezone
+
+    # Create date range for last 30 days (UTC)
+    end_date = datetime.now(timezone.utc)
+    dates = [(end_date - timedelta(days=i)).strftime('%m/%d') for i in range(29, -1, -1)]
+    date_range = pd.date_range(end=end_date, periods=30, freq='D', tz=timezone.utc)
+
+    # Initialize arrays
+    daily_income = [0.0] * 30
+    daily_expenses = [0.0] * 30
+
+    if not transactions_df.empty:
+        transactions_df['date_only'] = pd.to_datetime(transactions_df['date']).dt.date
+
+        # Calculate daily income from sales
+        sell_trans = transactions_df[transactions_df['is_buy'] == False]
+        for idx, day in enumerate(date_range):
+            day_date = day.date()
+            day_sales = sell_trans[sell_trans['date_only'] == day_date]
+            if not day_sales.empty:
+                daily_income[idx] = float((day_sales['unit_price'] * day_sales['quantity']).sum())
+
+        # Calculate daily expenses from purchases
+        buy_trans = transactions_df[transactions_df['is_buy'] == True]
+        for idx, day in enumerate(date_range):
+            day_date = day.date()
+            day_purchases = buy_trans[buy_trans['date_only'] == day_date]
+            if not day_purchases.empty:
+                daily_expenses[idx] = float((day_purchases['unit_price'] * day_purchases['quantity']).sum())
+
+    # Add fees from journal to expenses
+    if not journal_df.empty and 'date' in journal_df.columns and 'amount' in journal_df.columns:
+        journal_df['date_only'] = pd.to_datetime(journal_df['date']).dt.date
+
+        for idx, day in enumerate(date_range):
+            day_date = day.date()
+            day_journal = journal_df[journal_df['date_only'] == day_date]
+
+            if not day_journal.empty:
+                # Add fees and negative amounts to expenses
+                day_fees = abs(day_journal[day_journal['amount'] < 0]['amount'].sum())
+                daily_expenses[idx] += float(day_fees)
+
+                # Add positive amounts (like contract rewards) to income
+                day_rewards = day_journal[day_journal['amount'] > 0]['amount'].sum()
+                daily_income[idx] += float(day_rewards)
+
+    # Calculate net
+    net = [inc - exp for inc, exp in zip(daily_income, daily_expenses)]
+
+    return {
+        'dates': dates,
+        'income': daily_income,
+        'expenses': daily_expenses,
+        'net': net
+    }
+
+def _calculate_profit_margins(transactions_df):
+    """Calculate profit margins for last 7 days - shows profitability percentage"""
+    import pandas as pd
+    from datetime import timezone
+
+    end_date = datetime.now(timezone.utc)
+    dates = [(end_date - timedelta(days=i)).strftime('%m/%d') for i in range(6, -1, -1)]
+    margins = []
+
+    if transactions_df.empty:
+        return {'dates': dates, 'margins': [0.0] * 7}
+
+    # Create a copy to avoid modifying the original
+    trans_copy = transactions_df.copy()
+
+    # Ensure date is timezone-aware UTC
+    if 'date' in trans_copy.columns:
+        trans_copy['date_tz'] = pd.to_datetime(trans_copy['date'])
+        # Convert to date only (drops timezone but allows comparison)
+        trans_copy['date_only'] = trans_copy['date_tz'].dt.date
+    else:
+        return {'dates': dates, 'margins': [0.0] * 7}
+
+    # Create date range in UTC
+    date_range = pd.date_range(end=end_date, periods=7, freq='D', tz=timezone.utc)
+
+    for day in date_range:
+        day_date = day.date()
+        day_trans = trans_copy[trans_copy['date_only'] == day_date]
+
+        if day_trans.empty:
+            margins.append(0.0)
+            continue
+
+        sales = day_trans[day_trans['is_buy'] == False]
+        purchases = day_trans[day_trans['is_buy'] == True]
+
+        total_sales = float((sales['unit_price'] * sales['quantity']).sum()) if not sales.empty else 0.0
+        total_cost = float((purchases['unit_price'] * purchases['quantity']).sum()) if not purchases.empty else 0.0
+
+        if total_sales > 0:
+            # Calculate profit margin as percentage
+            margin = ((total_sales - total_cost) / total_sales) * 100
+            margins.append(round(margin, 1))
+        else:
+            margins.append(0.0)
+
+    return {'dates': dates, 'margins': margins}
+
+def _calculate_hub_volumes(transactions_df):
+    """Calculate trading volume by location/hub - total ISK traded"""
+    import pandas as pd
+
+    if transactions_df.empty or 'location_id' not in transactions_df.columns:
+        return {
+            'hubs': ['No Trading Data'],
+            'volumes': [0]
+        }
+
+    # Create a copy to avoid modifying original
+    trans_copy = transactions_df.copy()
+
+    # Group by location and sum transaction values
+    trans_copy['transaction_value'] = trans_copy['unit_price'] * trans_copy['quantity']
+    hub_data = trans_copy.groupby('location_id')['transaction_value'].sum().sort_values(ascending=False).head(5)
+
+    # Map location IDs to names (common trade hubs)
+    location_names = {
+        60003760: 'Jita IV - Moon 4',
+        60008494: 'Amarr VIII',
+        60011866: 'Dodixie IX - Moon 20',
+        60004588: 'Rens VI - Moon 8',
+        60005686: 'Hek VIII - Moon 12'
+    }
+
+    hubs = []
+    volumes = []
+
+    for location_id, volume in hub_data.items():
+        hub_name = location_names.get(location_id, f'Station {location_id}')
+        hubs.append(hub_name)
+        volumes.append(float(volume))
+
+    if not hubs:
+        return {'hubs': ['No Trading Data'], 'volumes': [0]}
+
+    return {'hubs': hubs, 'volumes': volumes}
+
 if __name__ == '__main__':
     print("Starting PanagoreTrades Web Application...")
     print("Access the application at: http://localhost:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
